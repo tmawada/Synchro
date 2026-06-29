@@ -1,0 +1,192 @@
+:root {
+  /* Color Palette */
+  --bg-primary: #0a0b0e;
+  --bg-secondary: #11141b;
+  --bg-tertiary: #181d28;
+  --bg-card: rgba(20, 25, 35, 0.65);
+  --bg-card-hover: rgba(28, 35, 48, 0.8);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color-active: rgba(255, 255, 255, 0.18);
+  
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --primary-glow: rgba(139, 92, 246, 0.35);
+  
+  /* Brand accents */
+  --color-gmail: #ef4444;
+  --color-outlook: #3b82f6;
+  --color-yahoo: #a855f7;
+  --color-custom: #14b8a6;
+  
+  /* Statuses */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #06b6d4;
+
+  /* Font settings */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: 'Outfit', var(--font-sans);
+  
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  box-sizing: border-box;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  border: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.glass-panel-interactive {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-interactive:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-color-active);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(139, 92, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(30px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Reset buttons and inputs */
+button {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  border: none;
+  outline: none;
+  background: none;
+  color: inherit;
+}
+
+input, textarea, select {
+  font-family: var(--font-sans);
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+/* Base Utility Classes */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.badge-primary {
+  background-color: var(--primary-glow);
+  color: #c084fc;
+}
+
+/* Provider colors classes */
+.provider-gmail { border-left: 3px solid var(--color-gmail) !important; }
+.provider-outlook { border-left: 3px solid var(--color-outlook) !important; }
+.provider-yahoo { border-left: 3px solid var(--color-yahoo) !important; }
+.provider-custom { border-left: 3px solid var(--color-custom) !important; }
+
+.text-gmail { color: var(--color-gmail); }
+.text-outlook { color: var(--color-outlook); }
+.text-yahoo { color: var(--color-yahoo); }
+.text-custom { color: var(--color-custom); }
+
+.bg-gmail { background-color: var(--color-gmail); }
+.bg-outlook { background-color: var(--color-outlook); }
+.bg-yahoo { background-color: var(--color-yahoo); }
+.bg-custom { background-color: var(--color-custom); }

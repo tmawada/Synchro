@@ -1,0 +1,37 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  password  String?  // nullable — Google-only users won't have a password
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
+}
+
+model Account {
+  id                String    @id @default(uuid())
+  provider          String    // "google", "email", etc.
+  providerAccountId String    // Provider's unique user ID (e.g., Google sub)
+  accessToken       String?   // OAuth access token
+  refreshToken      String?   // OAuth refresh token
+  tokenExpiry       DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
