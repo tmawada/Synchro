@@ -23,7 +23,7 @@
     },
     {
       "description": "Hold prisma on v6.19.3",
-      "matchPackageNames": ["prisma"],
+      "matchPackageNames": ["prisma", "@prisma"],
       "allowedVersions": "<7"
     }
   ]
