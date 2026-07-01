@@ -1,8 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  
+
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":semanticCommits"
   ],
 
   "labels": [
@@ -19,6 +20,11 @@
     {
       "matchFileNames": ["backend/**"],
       "groupName": "backend dependencies"
+    },
+    {
+      "description": "Hold prisma on v6.19.3",
+      "matchPackageNames": ["prisma"],
+      "allowedVersions": "<7"
     }
   ]
 }
