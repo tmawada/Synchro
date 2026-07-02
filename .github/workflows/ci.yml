@@ -47,8 +47,13 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Generate Prisma client
-        run: npx prisma generate
+      - name: Check Prisma versions
+        run:
+          npm ls prisma @prisma/client
+          npx prisma --version
+
+      # - name: Generate Prisma client
+      #   run: npx prisma generate
 
       - name: Build
         run: npm run build
