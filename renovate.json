@@ -22,8 +22,8 @@
       "groupName": "backend dependencies"
     },
     {
-      "description": "Hold prisma on v6.19.3",
-      "matchPackageNames": ["prisma", "@prisma"],
+      "description": "Hold prisma on v6.16.3",
+      "matchPackageNames": ["prisma", "@prisma/adapter-pg", "@prisma/client" ],
       "allowedVersions": "<7"
     }
   ]
