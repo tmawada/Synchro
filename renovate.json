@@ -3,16 +3,32 @@
 
   "extends": [
     "config:recommended",
+    ":dependencyDashboard",
     ":semanticCommits"
   ],
 
-  "labels": [
-    "dependencies"
-  ],
-
-  "dependencyDashboard": true,
+  "timezone": "Asia/Jakarta",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "rangeStrategy": "bump",
+  "rebaseWhen": "behind-base-branch",
+  "prConcurrentLimit": 10,
+  "platformAutomerge": false,
   
+  "lockFileMaintenance": {
+    "description": "Refresh transitive deps weekly — catches minimatch/picomatch-style CVEs that aren't in your direct deps.",
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "packageRules": [
+    {
+      "description": "Batch all minor + patch npm bumps into one PR, and auto-merge once checks pass.",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm (non-major)",
+      "automerge": true,
+      "minimumReleaseAge": "7 days"
+    },
     {
       "matchFileNames": ["frontend/**"],
       "groupName": "frontend dependencies"
