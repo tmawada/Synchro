@@ -25,6 +25,11 @@
       "description": "Hold prisma on v6.16.3",
       "matchPackageNames": ["prisma", "@prisma/adapter-pg", "@prisma/client" ],
       "allowedVersions": "<7"
+    },
+    {
+      "description": "Hold Typescript on v5.7.3",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6"
     }
   ]
 }
