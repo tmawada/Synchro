@@ -17,7 +17,7 @@ import CalendarView from './components/CalendarView';
 import TasksView from './components/TasksView';
 import ComposeModal from './components/ComposeModal';
 
-const API_URL = 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3030';
 
 export default function App() {
   // Navigation & Login
@@ -49,6 +49,9 @@ export default function App() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [composeInitialValues, setComposeInitialValues] = useState(null);
 
+  // Profile Dropdown state
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
   // Notification state
   const [notification, setNotification] = useState({ show: false, message: '' });
 
@@ -76,6 +79,41 @@ export default function App() {
       window.history.replaceState({}, document.title, '/');
     }
   }, []);
+
+  // Fetch real Google emails when logged in
+  useEffect(() => {
+    const token = localStorage.getItem('synchro_token');
+    if (isLoggedIn && token) {
+      fetch(`${API_URL}/auth/emails?limit=500`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(res => (res.ok ? res.json() : []))
+        .then(realEmails => {
+          if (Array.isArray(realEmails) && realEmails.length > 0) {
+            setEmails(realEmails);
+          }
+        })
+        .catch(err => console.error('Failed to fetch real emails:', err));
+    }
+  }, [isLoggedIn]);
+
+  // Fetch user profile on app start if logged in
+  useEffect(() => {
+    const token = localStorage.getItem('synchro_token');
+    if (isLoggedIn && token && (!authUser || !authUser.email)) {
+      fetch(`${API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(res => (res.ok ? res.json() : null))
+        .then(user => {
+          if (user) {
+            setAuthUser(user);
+            localStorage.setItem('synchro_authUser', JSON.stringify(user));
+          }
+        })
+        .catch(err => console.error('Failed to fetch user profile:', err));
+    }
+  }, [isLoggedIn, authUser]);
 
   // Data States
   const [emails, setEmails] = useState(() => {
@@ -329,8 +367,20 @@ export default function App() {
     localStorage.removeItem('synchro_authUser');
     setAuthUser(null);
     setIsLoggedIn(false);
+    setIsProfileOpen(false);
     triggerNotification('Logged out successfully.');
   };
+
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isProfileOpen && !event.target.closest('[data-profile-wrapper]')) {
+        setIsProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileOpen]);
 
   // Integration workflows
   const handleConvertEmailToTask = (email) => {
@@ -504,8 +554,61 @@ export default function App() {
               })}
             </div>
 
-            <div style={styles.profileBadge}>
-              <span style={styles.profileInitial}>U</span>
+            {/* Profile Dropdown */}
+            <div data-profile-wrapper style={styles.profileWrapper}>
+              <button
+                style={styles.profileBadge}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsProfileOpen(!isProfileOpen);
+                }}
+                aria-label="User profile"
+              >
+                {authUser?.avatarUrl ? (
+                  <img
+                    src={authUser.avatarUrl}
+                    alt={authUser.name || 'User'}
+                    style={styles.profileAvatar}
+                  />
+                ) : (
+                  <span style={styles.profileInitial}>
+                    {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </button>
+              {isProfileOpen && (
+                <div style={styles.profileDropdown}>
+                  <div style={styles.dropdownHeader}>
+                    {authUser?.avatarUrl ? (
+                      <img
+                        src={authUser.avatarUrl}
+                        alt={authUser.name || 'User'}
+                        style={styles.dropdownAvatar}
+                      />
+                    ) : (
+                      <div style={styles.dropdownAvatarPlaceholder}>
+                        {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={styles.dropdownUserInfo}>
+                      <span style={styles.dropdownUserName}>
+                        {authUser?.name || 'User'}
+                      </span>
+                      <span style={styles.dropdownUserEmail}>
+                        {authUser?.email || ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={styles.dropdownDivider} />
+                  <button
+                    style={styles.dropdownItem}
+                    onClick={handleLogout}
+                  >
+                    <LogOutIcon size={16} />
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
@@ -741,6 +844,93 @@ const styles = {
     fontSize: '13px',
     fontWeight: '700',
     color: '#ffffff',
+  },
+  profileAvatar: {
+    width: '32px',
+    height: '32px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+    border: '1px solid rgba(255,255,255,0.1)',
+  },
+  profileWrapper: {
+    position: 'relative',
+  },
+  profileDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 8px)',
+    right: 0,
+    width: '260px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '12px',
+    boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+    backdropFilter: 'blur(16px)',
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px',
+  },
+  dropdownAvatar: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+  },
+  dropdownAvatarPlaceholder: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  dropdownUserInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  dropdownUserName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  dropdownUserEmail: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  dropdownDivider: {
+    borderTop: '1px solid var(--border-color)',
+  },
+  dropdownItem: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--danger)',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+    ':hover': {
+      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    },
   },
   contentContainer: {
     flexGrow: 1,

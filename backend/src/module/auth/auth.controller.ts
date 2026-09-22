@@ -5,6 +5,7 @@ import {
   Body,
   Req,
   Res,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -79,5 +80,17 @@ export class AuthController {
   async getProfile(@Req() req: Request) {
     const user = req.user as { id: string };
     return this.authService.getProfile(user.id);
+  }
+
+  /**
+   * GET /auth/emails
+   * Get emails from user's connected Google account (protected).
+   */
+  @Get('emails')
+  @UseGuards(JwtAuthGuard)
+  async getEmails(@Req() req: Request, @Query('limit') limit?: string) {
+    const user = req.user as { id: string };
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    return this.authService.getGoogleEmails(user.id, limitNum);
   }
 }
