@@ -1,5 +1,6 @@
 import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -17,6 +18,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -223,5 +225,218 @@ export class AuthService {
         name: user.name,
       },
     };
+  }
+
+  private async refreshGoogleToken(account: { id: string; refreshToken: string | null }) {
+    if (!account.refreshToken) {
+      console.error(`[GoogleAuth] No refresh token available for account ${account.id}. User needs to re-authenticate with Google.`);
+      return null;
+    }
+
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
+    const clientSecret = this.configService.get<string>('GOOGLE_CLIENT_SECRET', '');
+
+    try {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: account.refreshToken,
+          grant_type: 'refresh_token',
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`[GoogleAuth] Failed to refresh Google token:`, errorText);
+        return null;
+      }
+      const data = (await res.json()) as { access_token?: string };
+      if (data.access_token) {
+        await this.prisma.account.update({
+          where: { id: account.id },
+          data: { accessToken: data.access_token },
+        });
+        return data.access_token;
+      }
+    } catch (err) {
+      console.error(`[GoogleAuth] Error refreshing Google token:`, err);
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * Helper to parse full text/plain or text/html email body from Gmail payload.
+   */
+  private extractGmailBody(payload: any): string {
+    if (!payload) return '';
+
+    // Direct body data
+    if (payload.body?.data) {
+      return Buffer.from(payload.body.data, 'base64url').toString('utf-8');
+    }
+
+    // Multipart body parts
+    if (payload.parts && Array.isArray(payload.parts)) {
+      const plainPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
+      if (plainPart?.body?.data) {
+        return Buffer.from(plainPart.body.data, 'base64url').toString('utf-8');
+      }
+
+      const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
+      if (htmlPart?.body?.data) {
+        const html = Buffer.from(htmlPart.body.data, 'base64url').toString('utf-8');
+        return html
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
+      for (const part of payload.parts) {
+        const nested = this.extractGmailBody(part);
+        if (nested) return nested;
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * Fetch emails from the authenticated user's Google account via Gmail REST API.
+   * Supports fetching up to `maxResults` (default 100).
+   */
+  async getGoogleEmails(userId: string, limit = 500) {
+    const account = await this.prisma.account.findFirst({
+      where: { userId, provider: 'google' },
+    });
+
+    if (!account || (!account.accessToken && !account.refreshToken)) {
+      return [];
+    }
+
+    let token = account.accessToken;
+    if (!token && account.refreshToken) {
+      token = await this.refreshGoogleToken(account);
+    }
+
+    if (!token) return [];
+
+    try {
+      let allMessages: { id: string }[] = [];
+      let pageToken = '';
+
+      // Fetch message list (supports fetching up to `limit` messages)
+      while (allMessages.length < limit) {
+        const fetchCount = Math.min(100, limit - allMessages.length);
+        let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${fetchCount}`;
+        if (pageToken) {
+          url += `&pageToken=${pageToken}`;
+        }
+
+        let listRes = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (listRes.status === 401) {
+          token = await this.refreshGoogleToken(account);
+          if (token) {
+            listRes = await fetch(url, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+          }
+        }
+
+        if (!listRes.ok) {
+          console.error('Failed to fetch Gmail list:', await listRes.text());
+          break;
+        }
+
+        const listData = (await listRes.json()) as {
+          messages?: { id: string }[];
+          nextPageToken?: string;
+        };
+
+        if (listData.messages && listData.messages.length > 0) {
+          allMessages.push(...listData.messages);
+        }
+
+        if (!listData.nextPageToken || allMessages.length >= limit) {
+          break;
+        }
+        pageToken = listData.nextPageToken;
+      }
+
+      if (allMessages.length === 0) {
+        return [];
+      }
+
+      const emails = await Promise.all(
+        allMessages.map(async (msg) => {
+          const detailRes = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            },
+          );
+
+          if (!detailRes.ok) return null;
+
+          const data = (await detailRes.json()) as any;
+          const headers = data.payload?.headers || [];
+          const getHeader = (name: string) =>
+            headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+          const rawFrom = getHeader('From');
+          let senderName = rawFrom;
+          let senderEmail = rawFrom;
+          if (rawFrom.includes('<')) {
+            const parts = rawFrom.split('<');
+            senderName = parts[0].trim().replace(/^"|"$/g, '');
+            senderEmail = parts[1].replace('>', '').trim();
+          }
+
+          const dateHeader = getHeader('Date');
+          let formattedDate = 'Recently';
+          if (dateHeader) {
+            try {
+              const d = new Date(dateHeader);
+              formattedDate = d.toLocaleDateString([], {
+                month: 'short',
+                day: 'numeric',
+              });
+            } catch {}
+          }
+
+          const fullBody = this.extractGmailBody(data.payload) || data.snippet || '(No content)';
+
+          return {
+            id: `gmail_${data.id}`,
+            subject: getHeader('Subject') || '(No Subject)',
+            sender: senderEmail,
+            senderName: senderName || senderEmail,
+            to: getHeader('To') || 'me',
+            account: account.providerAccountId || 'google',
+            body: fullBody,
+            folder: 'inbox',
+            date: formattedDate,
+            isRead: !data.labelIds?.includes('UNREAD'),
+            isStarred: data.labelIds?.includes('STARRED') || false,
+            attachments: [],
+            replies: [],
+          };
+        }),
+      );
+
+      return emails.filter(Boolean);
+    } catch (error) {
+      console.error('Error fetching Google emails:', error);
+      return [];
+    }
   }
 }

@@ -15,10 +15,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET', ''),
       callbackURL: configService.get<string>(
         'GOOGLE_CALLBACK_URL',
-        'http://localhost:3000/auth/google/callback',
+        'http://localhost:3030/auth/google/callback',
       ),
-      scope: ['email', 'profile'],
-    });
+      scope: ['email', 'profile', 'https://www.googleapis.com/auth/gmail.readonly'],
+      accessType: 'offline',
+      prompt: 'consent',
+    } as any);
   }
 
   async validate(
