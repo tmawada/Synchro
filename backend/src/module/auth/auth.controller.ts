@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -85,12 +86,66 @@ export class AuthController {
   /**
    * GET /auth/emails
    * Get emails from user's connected Google account (protected).
+   * Supports pagination with page and limit parameters.
    */
   @Get('emails')
   @UseGuards(JwtAuthGuard)
-  async getEmails(@Req() req: Request, @Query('limit') limit?: string) {
+  async getEmails(@Req() req: Request, @Query('page') page?: string, @Query('limit') limit?: string) {
     const user = req.user as { id: string };
-    const limitNum = limit ? parseInt(limit, 10) : 100;
-    return this.authService.getGoogleEmails(user.id, limitNum);
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 50;
+    return this.authService.getGoogleEmails(user.id, limitNum, pageNum);
+  }
+
+  /**
+   * GET /auth/ticktick-tasks
+   * Get tasks from user's connected TickTick account (protected).
+   * Returns converted tasks in Synchro format.
+   */
+  @Get('ticktick-tasks')
+  @UseGuards(JwtAuthGuard)
+  async getTickTickTasks(@Req() req: Request) {
+    const user = req.user as { id: string };
+    return this.authService.getTickTickTasks(user.id);
+  }
+
+  /**
+   * POST /auth/ticktick/connect
+   * Connect TickTick account by providing access token.
+   * Accepts API key or OAuth access token.
+   */
+  @Post('ticktick/connect')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async connectTickTick(@Req() req: Request, @Body() body: { accessToken: string; refreshToken?: string; ticktickId?: string }) {
+    const user = req.user as { id: string };
+    const { accessToken, refreshToken, ticktickId } = body;
+    if (!accessToken) {
+      throw new BadRequestException('Access token is required');
+    }
+    return this.authService.setTickTickToken(user.id, accessToken, refreshToken, ticktickId);
+  }
+
+  /**
+   * POST /auth/ticktick/disconnect
+   * Disconnect TickTick account (remove stored tokens).
+   */
+  @Post('ticktick/disconnect')
+  @UseGuards(JwtAuthGuard)
+  async disconnectTickTick(@Req() req: Request) {
+    const user = req.user as { id: string };
+    return this.authService.disconnectTickTick(user.id);
+  }
+
+  /**
+   * GET /auth/ticktick/status
+   * Check if TickTick is connected for the current user.
+   */
+  @Get('ticktick/status')
+  @UseGuards(JwtAuthGuard)
+  async tickTickStatus(@Req() req: Request) {
+    const user = req.user as { id: string };
+    const connected = await this.authService.isTickTickConnected(user.id);
+    return { connected };
   }
 }

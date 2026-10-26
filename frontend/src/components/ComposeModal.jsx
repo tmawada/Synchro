@@ -169,9 +169,10 @@ const styles = {
     fontSize: '18px',
     fontWeight: '600',
     margin: 0,
+    color: 'var(--text-primary)',
   },
   closeBtn: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-muted)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -257,11 +258,11 @@ const styles = {
     borderRadius: '6px',
     fontSize: '13.5px',
     color: '#ffffff',
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     fontWeight: '600',
     transition: 'background-color 0.2s',
     ':hover': {
-      backgroundColor: 'var(--primary-hover)',
+      backgroundColor: 'var(--accent-hover)',
     }
   }
 };

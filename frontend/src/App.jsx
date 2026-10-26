@@ -52,6 +52,11 @@ export default function App() {
   // Profile Dropdown state
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
+  // Pagination state for emails
+  const [mailPage, setMailPage] = useState(1);
+  const [mailTotalPages, setMailTotalPages] = useState(1);
+  const [mailLoading, setMailLoading] = useState(false);
+
   // Notification state
   const [notification, setNotification] = useState({ show: false, message: '' });
 
@@ -81,20 +86,32 @@ export default function App() {
   }, []);
 
   // Fetch real Google emails when logged in
-  useEffect(() => {
+  const fetchEmails = async (page = 1, limit = 50) => {
     const token = localStorage.getItem('synchro_token');
-    if (isLoggedIn && token) {
-      fetch(`${API_URL}/auth/emails?limit=500`, {
+    if (!isLoggedIn || !token) return;
+
+    setMailLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/emails?page=${page}&limit=${limit}`, {
         headers: { Authorization: `Bearer ${token}` },
-      })
-        .then(res => (res.ok ? res.json() : []))
-        .then(realEmails => {
-          if (Array.isArray(realEmails) && realEmails.length > 0) {
-            setEmails(realEmails);
-          }
-        })
-        .catch(err => console.error('Failed to fetch real emails:', err));
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.emails && Array.isArray(data.emails)) {
+          setEmails(data.emails);
+          setMailTotalPages(data.totalPages || 1);
+          setMailPage(data.page || 1);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch real emails:', err);
+    } finally {
+      setMailLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchEmails(1, 50);
   }, [isLoggedIn]);
 
   // Fetch user profile on app start if logged in
@@ -258,6 +275,77 @@ export default function App() {
     ];
   });
 
+  // TickTick Tasks State
+  const [ticktickTasks, setTickTickTasks] = useState(() => {
+    const saved = localStorage.getItem('synchro_ticktick_tasks');
+    if (saved) return JSON.parse(saved);
+    return [];
+  });
+
+  const [ticktickConnected, setTickTickConnected] = useState(() => {
+    const saved = localStorage.getItem('synchro_ticktick_connected');
+    return saved === 'true';
+  });
+
+  const [ticktickLoading, setTickTickLoading] = useState(false);
+
+  // Fetch TickTick tasks when logged in
+  const fetchTickTickTasks = async () => {
+    const token = localStorage.getItem('synchro_token');
+    if (!isLoggedIn || !token) return;
+
+    setTickTickLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/ticktick-tasks`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tasks && Array.isArray(data.tasks)) {
+          setTickTickTasks(data.tasks);
+          localStorage.setItem('synchro_ticktick_tasks', JSON.stringify(data.tasks));
+        }
+        if (typeof data.connected === 'boolean') {
+          setTickTickConnected(data.connected);
+          localStorage.setItem('synchro_ticktick_connected', String(data.connected));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch TickTick tasks:', err);
+    } finally {
+      setTickTickLoading(false);
+    }
+  };
+
+  // Fetch TickTick connection status
+  const checkTickTickStatus = async () => {
+    const token = localStorage.getItem('synchro_token');
+    if (!isLoggedIn || !token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/ticktick/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.connected === 'boolean') {
+          setTickTickConnected(data.connected);
+          localStorage.setItem('synchro_ticktick_connected', String(data.connected));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check TickTick status:', err);
+    }
+  };
+
+  // Trigger TickTick tasks fetch when logged in
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchTickTickTasks();
+      checkTickTickStatus();
+    }
+  }, [isLoggedIn]);
+
   const [events, setEvents] = useState(() => {
     const saved = localStorage.getItem('synchro_events');
     if (saved) return JSON.parse(saved);
@@ -369,6 +457,62 @@ export default function App() {
     setIsLoggedIn(false);
     setIsProfileOpen(false);
     triggerNotification('Logged out successfully.');
+  };
+
+  // TickTick Integration Handlers
+  const handleConnectTickTick = async (accessToken) => {
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/ticktick/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ accessToken }),
+      });
+
+      if (res.ok) {
+        triggerNotification('TickTick connected successfully!');
+        await fetchTickTickTasks();
+        await checkTickTickStatus();
+      } else {
+        const error = await res.json();
+        triggerNotification(`Failed to connect TickTick: ${error.message || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to connect TickTick:', err);
+      triggerNotification('Failed to connect TickTick.');
+    }
+  };
+
+  const handleDisconnectTickTick = async () => {
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/ticktick/disconnect`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        setTickTickTasks([]);
+        setTickTickConnected(false);
+        localStorage.removeItem('synchro_ticktick_tasks');
+        localStorage.removeItem('synchro_ticktick_connected');
+        triggerNotification('TickTick disconnected.');
+      } else {
+        triggerNotification('Failed to disconnect TickTick.');
+      }
+    } catch (err) {
+      console.error('Failed to disconnect TickTick:', err);
+      triggerNotification('Failed to disconnect TickTick.');
+    }
   };
 
   // Close profile dropdown when clicking outside
@@ -517,16 +661,6 @@ export default function App() {
             )}
           </button>
         </nav>
-
-        <div style={styles.sidebarFooter}>
-          <button 
-            style={styles.logoutBtn} 
-            onClick={handleLogout}
-            title="Sign out of Dashboard"
-          >
-            <LogOutIcon size={18} />
-          </button>
-        </div>
       </div>
 
       {/* Main Workspace Frame */}
@@ -626,6 +760,10 @@ export default function App() {
               setActiveAccountFilter={setActiveAccountFilter}
               onTriggerNotification={triggerNotification}
               onOpenCompose={() => setIsComposeOpen(true)}
+              currentPage={mailPage}
+              totalPages={mailTotalPages}
+              onPageChange={(page) => fetchEmails(page, 50)}
+              isLoading={mailLoading}
             />
           )}
 
@@ -644,12 +782,18 @@ export default function App() {
           {activeTab === 'tasks' && (
             <TasksView
               tasks={tasks}
+              ticktickTasks={ticktickTasks}
+              ticktickConnected={ticktickConnected}
+              ticktickLoading={ticktickLoading}
               onAddTask={(t) => setTasks(prev => [t, ...prev])}
               onUpdateTasks={setTasks}
               onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))}
               onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
               onTriggerNotification={triggerNotification}
               onOpenEmail={handleOpenEmail}
+              onConnectTickTick={handleConnectTickTick}
+              onDisconnectTickTick={handleDisconnectTickTick}
+              onRefreshTickTick={fetchTickTickTasks}
             />
           )}
         </main>
@@ -704,7 +848,7 @@ const styles = {
     width: '38px',
     height: '38px',
     borderRadius: '10px',
-    background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
     color: '#ffffff',
     fontSize: '20px',
     fontWeight: '800',
@@ -712,7 +856,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: 'var(--font-display)',
-    boxShadow: '0 0 12px rgba(139, 92, 246, 0.3)',
+    boxShadow: '0 0 12px rgba(192, 57, 43, 0.3)',
   },
   sidebarNav: {
     display: 'flex',
@@ -740,7 +884,7 @@ const styles = {
   },
   navBtnActive: {
     backgroundColor: 'var(--primary-glow)',
-    color: '#c084fc',
+    color: 'var(--accent)',
   },
   navText: {
     fontSize: '9px',
@@ -834,11 +978,12 @@ const styles = {
     width: '32px',
     height: '32px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     border: '1px solid rgba(255,255,255,0.1)',
+    boxShadow: '0 0 15px rgba(192, 57, 43, 0.3)',
   },
   profileInitial: {
     fontSize: '13px',
@@ -884,7 +1029,7 @@ const styles = {
     width: '40px',
     height: '40px',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,6 +1,21 @@
 import React, { useState } from 'react';
 import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon } from './Icons';
 
+// Skeleton loader component for email cards
+function EmailCardSkeleton() {
+  return (
+    <div style={styles.skeletonCard}>
+      <div style={styles.skeletonHeader}>
+        <div style={{...styles.skeletonLine, width: '40%', height: '14px'}} />
+        <div style={{...styles.skeletonLine, width: '60px', height: '11px'}} />
+      </div>
+      <div style={{...styles.skeletonLine, width: '70%', height: '13px', marginBottom: '6px'}} />
+      <div style={{...styles.skeletonLine, width: '90%', height: '12px', marginBottom: '4px'}} />
+      <div style={{...styles.skeletonLine, width: '60%', height: '12px'}} />
+    </div>
+  );
+}
+
 export default function MailView({
   emails,
   connectedAccounts,
@@ -10,13 +25,22 @@ export default function MailView({
   activeAccountFilter,
   setActiveAccountFilter,
   onTriggerNotification,
-  onOpenCompose
+  onOpenCompose,
+  currentPage = 1,
+  totalPages = 1,
+  onPageChange,
+  isLoading = false
 }) {
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
   const [selectedEmailId, setSelectedEmailId] = useState(emails.length > 0 ? emails[0].id : null);
   const [searchQuery, setSearchQuery] = useState('');
   const [replyBody, setReplyBody] = useState('');
+
+  // Static list pane width
+  const [listPaneWidth] = useState(480);
+
   
+
   // Clean up selection if email is deleted
   const selectedEmail = emails.find(e => e.id === selectedEmailId) || (emails.length > 0 ? emails[0] : null);
 
@@ -116,7 +140,7 @@ export default function MailView({
       <div style={styles.sidebar}>
         <button style={styles.composeBtn} onClick={() => onOpenCompose()}>
           <MailIcon size={16} style={{ marginRight: '8px' }} />
-          Compose Mail
+          New Mail
         </button>
 
         <div style={styles.navSection}>
@@ -179,7 +203,7 @@ export default function MailView({
       </div>
 
       {/* 2nd Pane: Email list */}
-      <div style={styles.listPane}>
+      <div style={{...styles.listPane, width: `${listPaneWidth}px`}}>
         <div style={styles.searchBarContainer}>
           <SearchIcon size={16} style={styles.searchIcon} />
           <input
@@ -192,13 +216,20 @@ export default function MailView({
         </div>
 
         <div style={styles.listContainer}>
-          {filteredEmails.length === 0 ? (
+          {isLoading ? (
+            // Show skeleton loaders while fetching
+            <>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <EmailCardSkeleton key={`skeleton-${i}`} />
+              ))}
+            </>
+          ) : filteredEmails.length === 0 ? (
             <div style={styles.emptyState}>No emails found.</div>
           ) : (
             filteredEmails.map((mail) => {
               const accountObj = connectedAccounts.find(acc => acc.email === mail.account);
               const provider = accountObj ? accountObj.provider : 'custom';
-              
+
               return (
                 <div
                   key={mail.id}
@@ -223,19 +254,19 @@ export default function MailView({
                   </div>
                   <div style={styles.emailSubject}>{mail.subject}</div>
                   <div style={styles.emailPreview}>{mail.body}</div>
-                  
+
                   <div style={styles.emailCardFooter}>
                     <span style={styles.emailAccountBadge} className={`text-${provider}`}>
                       {mail.account}
                     </span>
                     <div style={styles.cardActions}>
-                      <button 
+                      <button
                         style={{ ...styles.cardActionBtn, color: mail.isStarred ? '#fbbf24' : 'var(--text-muted)' }}
                         onClick={(e) => handleToggleStar(mail.id, e)}
                       >
                         <StarIcon size={14} />
                       </button>
-                      <button 
+                      <button
                         style={styles.cardActionBtn}
                         onClick={(e) => handleDeleteEmail(mail.id, e)}
                       >
@@ -247,6 +278,35 @@ export default function MailView({
               );
             })
           )}
+        </div>
+
+        {/* Pagination Controls - Bottom of email list */}
+        <div style={styles.paginationContainerBottom}>
+          <button
+            style={styles.paginationButton}
+            onClick={() => {
+              if (currentPage > 1) {
+                onPageChange(currentPage - 1);
+              }
+            }}
+            disabled={currentPage <= 1}
+          >
+            ◀
+          </button>
+          <div style={styles.paginationInfo}>
+            Page {currentPage} of {totalPages}
+          </div>
+          <button
+            style={styles.paginationButton}
+            onClick={() => {
+              if (currentPage < totalPages) {
+                onPageChange(currentPage + 1);
+              }
+            }}
+            disabled={currentPage >= totalPages}
+          >
+            ▶
+          </button>
         </div>
       </div>
 
@@ -376,7 +436,9 @@ const styles = {
     backgroundColor: 'var(--bg-secondary)',
   },
   sidebar: {
-    width: '220px',
+    minWidth: '200px',
+    maxWidth: '280px',
+    width: 'auto',
     borderRight: '1px solid var(--border-color)',
     padding: '16px',
     display: 'flex',
@@ -384,22 +446,23 @@ const styles = {
     gap: '24px',
     backgroundColor: 'var(--bg-primary)',
     boxSizing: 'border-box',
+    overflow: 'hidden',
   },
   composeBtn: {
     width: '100%',
     padding: '12px',
     borderRadius: '8px',
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     color: '#ffffff',
     fontSize: '13.5px',
     fontWeight: '600',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+    boxShadow: '0 4px 12px rgba(192, 57, 43, 0.3)',
     transition: 'background-color 0.2s',
     ':hover': {
-      backgroundColor: 'var(--primary-hover)',
+      backgroundColor: 'var(--accent-hover)',
     }
   },
   navSection: {
@@ -426,6 +489,7 @@ const styles = {
     color: 'var(--text-secondary)',
     textAlign: 'left',
     transition: 'all 0.2s',
+    overflow: 'hidden',
     ':hover': {
       backgroundColor: 'rgba(255,255,255,0.04)',
       color: 'var(--text-primary)',
@@ -437,11 +501,12 @@ const styles = {
     fontWeight: '600',
   },
   listPane: {
-    width: '360px',
+    width: '480px',
+    flexShrink: 0,
     borderRight: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
-    backgroundColor: 'rgba(10, 11, 14, 0.4)',
+    backgroundColor: 'var(--bg-secondary)',
   },
   searchBarContainer: {
     padding: '16px',
@@ -459,7 +524,7 @@ const styles = {
     width: '100%',
     padding: '8px 12px 8px 36px',
     borderRadius: '6px',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
     fontSize: '13px',
     color: 'var(--text-primary)',
@@ -486,14 +551,15 @@ const styles = {
     gap: '6px',
     transition: 'background-color 0.2s',
     ':hover': {
-      backgroundColor: 'rgba(255, 255, 255, 0.02)',
+      backgroundColor: 'rgba(29, 56, 74, 0.1)',
     }
   },
   emailCardActive: {
-    backgroundColor: 'rgba(139, 92, 246, 0.06)',
+    backgroundColor: 'var(--primary-deep)',
+    borderLeft: '3px solid var(--accent)',
   },
   emailCardUnread: {
-    backgroundColor: 'rgba(255, 255, 255, 0.01)',
+    backgroundColor: 'rgba(29, 56, 74, 0.15)',
   },
   emailCardHeader: {
     display: 'flex',
@@ -757,7 +823,7 @@ const styles = {
   replySendBtn: {
     padding: '8px 16px',
     borderRadius: '6px',
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     color: '#ffffff',
     fontSize: '12.5px',
     fontWeight: '600',
@@ -765,8 +831,50 @@ const styles = {
     alignItems: 'center',
     transition: 'background-color 0.2s',
     ':hover': {
-      backgroundColor: 'var(--primary-hover)',
+      backgroundColor: 'var(--accent-hover)',
     }
+  },
+  paginationContainer: {
+    display: 'flex',
+    gap: '8px',
+    padding: '12px 16px',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottom: '1px solid var(--border-color)',
+  },
+  paginationContainerBottom: {
+    display: 'flex',
+    gap: '8px',
+    padding: '12px 16px',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTop: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-primary)',
+  },
+  paginationButton: {
+    padding: '8px 14px',
+    borderRadius: '6px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-primary)',
+    fontSize: '16px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      backgroundColor: 'var(--accent)',
+      color: '#ffffff',
+      borderColor: 'var(--accent)',
+    },
+    ':disabled': {
+      opacity: 0.4,
+      cursor: 'not-allowed',
+    },
+  },
+  paginationInfo: {
+    padding: '0 12px',
+    color: 'var(--text-muted)',
+    fontSize: '13px',
+    fontWeight: '500',
   },
   noEmailSelected: {
     display: 'flex',
@@ -777,5 +885,23 @@ const styles = {
     padding: '40px',
     color: 'var(--text-secondary)',
     textAlign: 'center',
-  }
-};
+  },
+  skeletonCard: {
+    padding: '16px',
+    borderBottom: '1px solid var(--border-color)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    backgroundColor: 'var(--bg-secondary)',
+  },
+  skeletonHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  skeletonLine: {
+    backgroundColor: 'var(--bg-tertiary)',
+    borderRadius: '4px',
+    animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+  },
+  };

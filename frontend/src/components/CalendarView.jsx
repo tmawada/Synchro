@@ -110,24 +110,24 @@ export default function CalendarView({
     const hourHeight = 60; // 60px per hour
     const startHourOffset = ev.startHour - 8; // grid starts at 8 AM
     const minutesOffset = ev.startMin / 60;
-    
+
     const top = (startHourOffset + minutesOffset) * hourHeight;
     const height = (ev.duration / 60) * hourHeight;
 
     let bg = 'var(--primary-glow)';
-    let border = 'rgba(139, 92, 246, 0.4)';
+    let border = 'rgba(29, 56, 74, 0.4)';
     let text = '#c084fc';
 
     switch (ev.category) {
       case 'email':
-        bg = 'rgba(59, 130, 246, 0.15)';
-        border = '#3b82f6';
-        text = '#60a5fa';
+        bg = 'rgba(29, 56, 74, 0.15)';
+        border = 'var(--accent)';
+        text = '#ffffff';
         break;
       case 'work':
-        bg = 'rgba(139, 92, 246, 0.15)';
-        border = '#8b5cf6';
-        text = '#a78bfa';
+        bg = 'rgba(29, 56, 74, 0.15)';
+        border = 'var(--primary)';
+        text = '#ffffff';
         break;
       case 'health':
         bg = 'rgba(16, 185, 129, 0.15)';
@@ -435,17 +435,17 @@ const styles = {
     width: '100%',
     padding: '12px',
     borderRadius: '8px',
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     color: '#ffffff',
     fontSize: '13.5px',
     fontWeight: '600',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+    boxShadow: '0 4px 12px rgba(192, 57, 43, 0.3)',
     transition: 'background-color 0.2s',
     ':hover': {
-      backgroundColor: 'var(--primary-hover)',
+      backgroundColor: 'var(--accent-hover)',
     }
   },
   sidebarSection: {
@@ -486,8 +486,8 @@ const styles = {
   },
   routineCardPlacing: {
     backgroundColor: 'var(--bg-card-hover)',
-    borderColor: 'var(--primary)',
-    boxShadow: '0 0 10px rgba(139, 92, 246, 0.15)',
+    borderColor: 'var(--accent)',
+    boxShadow: '0 0 10px rgba(192, 57, 43, 0.15)',
   },
   routineCardHeader: {
     display: 'flex',
@@ -518,8 +518,8 @@ const styles = {
   placingAlert: {
     padding: '12px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(139, 92, 246, 0.1)',
-    border: '1px solid var(--primary)',
+    backgroundColor: 'rgba(192, 57, 43, 0.1)',
+    border: '1px solid var(--accent)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -563,9 +563,9 @@ const styles = {
     borderRadius: '12px',
   },
   dayLabelToday: {
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     color: '#ffffff',
-    boxShadow: '0 0 10px rgba(139, 92, 246, 0.4)',
+    boxShadow: '0 0 10px rgba(192, 57, 43, 0.4)',
   },
   gridScrollContainer: {
     flexGrow: 1,

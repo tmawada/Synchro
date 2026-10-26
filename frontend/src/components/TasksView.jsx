@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon } from './Icons';
+import React, { useState, useMemo } from 'react';
+import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon } from './Icons';
 
 export default function TasksView({
   tasks,
+  ticktickTasks = [],
+  ticktickConnected = false,
+  ticktickLoading = false,
   onAddTask,
   onUpdateTasks,
   onDeleteTask,
   onScheduleTaskOnCalendar,
   onTriggerNotification,
-  onOpenEmail
+  onOpenEmail,
+  onConnectTickTick,
+  onDisconnectTickTick,
+  onRefreshTickTick
 }) {
   const [selectedFilter, setSelectedFilter] = useState('all'); // all, today, high, completed, list_work, list_personal, list_routine
   const [title, setTitle] = useState('');
@@ -16,6 +22,7 @@ export default function TasksView({
   const [listType, setListType] = useState('work'); // work, personal, routine
   const [duration, setDuration] = useState(60); // minutes
   const [dueDate, setDueDate] = useState('');
+  const [showTickTickSettings, setShowTickTickSettings] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -42,12 +49,26 @@ export default function TasksView({
   };
 
   const toggleTaskCompleted = (taskId) => {
-    const updated = tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
+    const updated = allTasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
     onUpdateTasks(updated);
   };
 
+  // Merge local tasks with TickTick tasks
+  // TickTick tasks are read-only (source === 'ticktick')
+  // Local tasks can be modified/deleted
+  const allTasks = useMemo(() => {
+    if (!ticktickConnected || ticktickTasks.length === 0) {
+      return tasks;
+    }
+    // Combine, avoiding duplicates by ID
+    const taskMap = new Map();
+    tasks.forEach(t => taskMap.set(t.id, t));
+    ticktickTasks.forEach(t => taskMap.set(t.id, t));
+    return Array.from(taskMap.values());
+  }, [tasks, ticktickTasks, ticktickConnected]);
+
   // Filter Tasks
-  const filteredTasks = tasks.filter((t) => {
+  const filteredTasks = allTasks.filter((t) => {
     if (selectedFilter === 'today') {
       const todayStr = new Date().toISOString().split('T')[0];
       return t.dueDate === todayStr && !t.completed;
@@ -66,6 +87,8 @@ export default function TasksView({
     return !t.completed;
   });
 
+  const isTickTickTask = (task) => task.source === 'ticktick';
+
   const getPriorityStyle = (prio) => {
     switch (prio) {
       case 'high': return { color: 'var(--danger)', bg: 'rgba(239, 68, 68, 0.15)' };
@@ -75,7 +98,7 @@ export default function TasksView({
   };
 
   const getCount = (filter) => {
-    return tasks.filter((t) => {
+    return allTasks.filter((t) => {
       if (filter === 'today') {
         const todayStr = new Date().toISOString().split('T')[0];
         return t.dueDate === todayStr && !t.completed;
@@ -154,6 +177,42 @@ export default function TasksView({
             <span style={styles.countBadge}>{getCount('list_routine')}</span>
           </button>
         </div>
+
+        {/* TickTick Integration */}
+        {ticktickConnected && !ticktickLoading ? (
+          <div style={styles.ticktickConnected}>
+            <span style={{ ...styles.prioTag, color: 'var(--text-primary)', fontSize: '11px', padding: '2px 6px', borderRadius: '6px', marginRight: '8px' }}>
+              <LinkIcon size={12} style={{ marginRight: '4px' }} /> Connected
+            </span>
+            <button
+              style={{ ...styles.scheduleBlockBtn, padding: '4px 8px', fontSize: '10px', marginLeft: '8px', backgroundColor: 'rgba(255,255,255,0.02)' }}
+              onClick={onDisconnectTickTick}
+              title="Disconnect TickTick"
+            >
+              <TrashIcon size={12} /> Disconnect
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+            <button
+              style={{ ...styles.navItem, padding: '6px 12px', fontSize: '12px' }}
+              onClick={onConnectTickTick}
+              title="Connect TickTick"
+            >
+              <SettingsIcon size={14} /> Connect
+            </button>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Sync your TickTick tasks
+            </span>
+          </div>
+        )}
+
+        {/* TickTick sync status when loading */}
+        {ticktickLoading && (
+          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+            <span>Syncing TickTick tasks...</span>
+          </div>
+        )}
       </div>
 
       {/* Main Task Dashboard */}
@@ -274,9 +333,16 @@ export default function TasksView({
                         <span style={styles.detailText}>
                           Est: {task.duration} mins
                         </span>
-                        
+
+                        {isTickTickTask(task) && task.projectName && (
+                          <span style={{ ...styles.prioTag, color: 'var(--primary)', backgroundColor: 'rgba(139, 92, 246, 0.15)', fontSize: '9px' }}>
+                            <LinkIcon size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
+                            {task.projectName}
+                          </span>
+                        )}
+
                         {task.emailRef && (
-                          <button 
+                          <button
                             style={styles.emailRefBtn}
                             onClick={() => onOpenEmail(task.emailRef)}
                             title="Open related email details"
@@ -289,7 +355,7 @@ export default function TasksView({
                     </div>
 
                     <div style={styles.taskActions}>
-                      {!task.completed && (
+                      {!task.completed && !isTickTickTask(task) && (
                         <button
                           style={styles.scheduleBlockBtn}
                           className="glass-panel-interactive"
@@ -303,12 +369,20 @@ export default function TasksView({
                       <button
                         style={styles.deleteBtn}
                         onClick={() => {
+                          if (isTickTickTask(task)) {
+                            onTriggerNotification(`Cannot delete TickTick task: "${task.title}" - read-only source`);
+                            return;
+                          }
                           onDeleteTask(task.id);
                           onTriggerNotification(`Deleted task: "${task.title}"`);
                         }}
-                        title="Delete Task"
+                        title={isTickTickTask(task) ? 'Cannot delete (TickTick source)' : 'Delete Task'}
                       >
-                        <TrashIcon size={14} />
+                        {isTickTickTask(task) ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}><TrashIcon size={12} /> Read-only</span>
+                        ) : (
+                          <TrashIcon size={14} />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -370,7 +444,7 @@ const styles = {
   },
   navItemActive: {
     backgroundColor: 'var(--primary-glow)',
-    color: '#c084fc',
+    color: 'var(--accent)',
     fontWeight: '600',
   },
   countBadge: {
@@ -561,5 +635,12 @@ const styles = {
       color: 'var(--danger)',
       backgroundColor: 'rgba(239,68,68,0.05)',
     }
+  },
+  ticktickConnected: {
+    display: 'flex',
+    alignItems: 'center',
+    marginTop: '12px',
+    paddingTop: '12px',
+    borderTop: '1px solid var(--border-color)',
   }
 };

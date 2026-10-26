@@ -24,11 +24,17 @@ model User {
 
 model Account {
   id                String    @id @default(uuid())
-  provider          String    // "google", "email", etc.
-  providerAccountId String    // Provider's unique user ID (e.g., Google sub)
-  accessToken       String?   // OAuth access token
-  refreshToken      String?   // OAuth refresh token
+  provider          String    // "google", "email", "ticktick", etc.
+  providerAccountId String    // Provider's unique user ID (e.g., Google sub or TickTick user ID)
+  accessToken       String?   // OAuth access token or API key token
+  refreshToken      String?   // OAuth refresh token (for token refresh if needed)
   tokenExpiry       DateTime?
+
+  // TickTick-specific fields
+  ticktickId        String?   // TickTick user ID (from API response)
+  ticktickAccessToken String?   // TickTick API access token / API key
+  ticktickRefreshToken String?   // TickTick refresh token (if using OAuth 2.0)
+  ticktickTokenExpiry DateTime? // Token expiry time
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

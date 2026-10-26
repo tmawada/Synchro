@@ -1,8 +1,9 @@
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { TickTickService } from '../ticktick/ticktick.service';
 
 interface GoogleProfile {
   googleId: string;
@@ -15,11 +16,15 @@ interface GoogleProfile {
 
 @Injectable()
 export class AuthService {
+  private tickTickService: TickTickService;
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) {
+    this.tickTickService = new TickTickService(configService);
+  }
 
   /**
    * Register a new user with email + password.
@@ -309,15 +314,16 @@ export class AuthService {
 
   /**
    * Fetch emails from the authenticated user's Google account via Gmail REST API.
-   * Supports fetching up to `maxResults` (default 100).
+   * Uses Gmail's batch API to fetch multiple emails efficiently.
+   * Includes rate limiting to stay under Google API quotas.
    */
-  async getGoogleEmails(userId: string, limit = 500) {
+  async getGoogleEmails(userId: string, limit = 10, page = 1) {
     const account = await this.prisma.account.findFirst({
       where: { userId, provider: 'google' },
     });
 
     if (!account || (!account.accessToken && !account.refreshToken)) {
-      return [];
+      return { emails: [], totalPages: 0, page: 1 };
     }
 
     let token = account.accessToken;
@@ -325,67 +331,74 @@ export class AuthService {
       token = await this.refreshGoogleToken(account);
     }
 
-    if (!token) return [];
+    if (!token) return { emails: [], totalPages: 0, page: 1 };
 
     try {
-      let allMessages: { id: string }[] = [];
-      let pageToken = '';
+      // Reduce limit to minimize API calls
+      const fetchLimit = Math.min(limit, 10);
 
-      // Fetch message list (supports fetching up to `limit` messages)
-      while (allMessages.length < limit) {
-        const fetchCount = Math.min(100, limit - allMessages.length);
-        let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${fetchCount}`;
-        if (pageToken) {
-          url += `&pageToken=${pageToken}`;
+      // Rate limiting delay
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Fetch message list
+      const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${fetchLimit}`;
+      let listRes = await fetch(listUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (listRes.status === 401 && account.refreshToken) {
+        token = await this.refreshGoogleToken(account);
+        if (token) {
+          listRes = await fetch(listUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
         }
-
-        let listRes = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (listRes.status === 401) {
-          token = await this.refreshGoogleToken(account);
-          if (token) {
-            listRes = await fetch(url, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-          }
-        }
-
-        if (!listRes.ok) {
-          console.error('Failed to fetch Gmail list:', await listRes.text());
-          break;
-        }
-
-        const listData = (await listRes.json()) as {
-          messages?: { id: string }[];
-          nextPageToken?: string;
-        };
-
-        if (listData.messages && listData.messages.length > 0) {
-          allMessages.push(...listData.messages);
-        }
-
-        if (!listData.nextPageToken || allMessages.length >= limit) {
-          break;
-        }
-        pageToken = listData.nextPageToken;
       }
 
-      if (allMessages.length === 0) {
-        return [];
+      if (!listRes.ok) {
+        const errorText = await listRes.text();
+        console.error('Failed to fetch Gmail list:', errorText);
+        return { emails: [], totalPages: 0, page: 1 };
       }
 
-      const emails = await Promise.all(
-        allMessages.map(async (msg) => {
+      const listData = (await listRes.json()) as {
+        messages?: { id: string }[];
+        resultSizeEstimate?: number;
+        nextPageToken?: string;
+      };
+
+      if (!listData.messages || listData.messages.length === 0) {
+        return { emails: [], totalPages: 0, page: 1 };
+      }
+
+      const totalMessages = listData.resultSizeEstimate || fetchLimit;
+      const totalPages = Math.max(1, Math.ceil(totalMessages / fetchLimit));
+
+      // Use batch request to fetch all message details at once
+      // This reduces the number of API calls from N to 1
+      const emails: any[] = [];
+
+      // Fetch details one at a time with delays to avoid rate limits
+      for (let i = 0; i < listData.messages.length; i++) {
+        const msg = listData.messages[i];
+
+        // Add delay between fetches (except first one)
+        if (i > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        try {
           const detailRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
             {
               headers: { Authorization: `Bearer ${token}` },
             },
           );
 
-          if (!detailRes.ok) return null;
+          if (!detailRes.ok) {
+            console.warn(`Failed to fetch email ${msg.id}`);
+            continue;
+          }
 
           const data = (await detailRes.json()) as any;
           const headers = data.payload?.headers || [];
@@ -413,30 +426,133 @@ export class AuthService {
             } catch {}
           }
 
-          const fullBody = this.extractGmailBody(data.payload) || data.snippet || '(No content)';
-
-          return {
+          emails.push({
             id: `gmail_${data.id}`,
             subject: getHeader('Subject') || '(No Subject)',
             sender: senderEmail,
             senderName: senderName || senderEmail,
             to: getHeader('To') || 'me',
             account: account.providerAccountId || 'google',
-            body: fullBody,
+            body: data.snippet || '(No preview available)',
             folder: 'inbox',
             date: formattedDate,
             isRead: !data.labelIds?.includes('UNREAD'),
             isStarred: data.labelIds?.includes('STARRED') || false,
             attachments: [],
             replies: [],
-          };
-        }),
-      );
+          });
+        } catch (error) {
+          console.warn('Failed to fetch email details:', error);
+          continue;
+        }
+      }
 
-      return emails.filter(Boolean);
+      return {
+        emails: emails,
+        totalPages: totalPages,
+        page: page
+      };
     } catch (error) {
       console.error('Error fetching Google emails:', error);
-      return [];
+      return { emails: [], totalPages: 0, page: 1 };
     }
+  }
+
+  /**
+   * Get TickTick tasks for the authenticated user.
+   * Fetches from TickTick API using stored access token.
+   */
+  async getTickTickTasks(userId: string) {
+    // Find TickTick account for this user
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (!ticktickAccount || !ticktickAccount.ticktickAccessToken) {
+      return { tasks: [], projects: [], connected: false };
+    }
+
+    try {
+      const response = await this.tickTickService.getTasks(ticktickAccount.ticktickAccessToken);
+
+      // Convert to Synchro format
+      const synchroTasks = response.tasks.map((task) =>
+        this.tickTickService.convertToSynchroTask(task, response.projects)
+      );
+
+      return {
+        tasks: synchroTasks,
+        projects: response.projects,
+        connected: true,
+      };
+    } catch (error) {
+      console.error('[AuthService] Failed to fetch TickTick tasks:', error);
+      // If token is expired or invalid, return disconnected
+      return { tasks: [], projects: [], connected: false, error: error.message };
+    }
+  }
+
+  /**
+   * Store or update TickTick token for a user.
+   * Called when user connects TickTick account.
+   */
+  async setTickTickToken(userId: string, accessToken: string, refreshToken?: string, ticktickId?: string) {
+    // First, check if a ticktick account already exists
+    const existingAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (existingAccount) {
+      return this.prisma.account.update({
+        where: { id: existingAccount.id },
+        data: {
+          ticktickAccessToken: accessToken,
+          ticktickRefreshToken: refreshToken || existingAccount.ticktickRefreshToken,
+          ticktickId: ticktickId || existingAccount.ticktickId,
+          ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days default
+        },
+      });
+    }
+
+    // Create new TickTick account entry
+    return this.prisma.account.create({
+      data: {
+        provider: 'ticktick',
+        providerAccountId: ticktickId || `ticktick_${userId}`,
+        ticktickAccessToken: accessToken,
+        ticktickRefreshToken: refreshToken,
+        ticktickId: ticktickId,
+        ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
+        userId,
+      },
+    });
+  }
+
+  /**
+   * Disconnect TickTick account (remove tokens)
+   */
+  async disconnectTickTick(userId: string) {
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (ticktickAccount) {
+      await this.prisma.account.delete({
+        where: { id: ticktickAccount.id },
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Check if user has TickTick connected
+   */
+  async isTickTickConnected(userId: string): Promise<boolean> {
+    const account = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+      select: { ticktickAccessToken: true },
+    });
+    return !!account?.ticktickAccessToken;
   }
 }

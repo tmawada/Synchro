@@ -424,7 +424,7 @@ const styles = {
     width: '400px',
     height: '400px',
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(139,92,246,0.18) 0%, rgba(0,0,0,0) 70%)',
+    background: 'radial-gradient(circle, rgba(29, 56, 74, 0.25) 0%, rgba(0,0,0,0) 70%)',
     top: '20%',
     left: '30%',
     filter: 'blur(40px)',
@@ -449,12 +449,12 @@ const styles = {
     width: '48px',
     height: '48px',
     borderRadius: '12px',
-    background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: '16px',
-    boxShadow: '0 0 16px rgba(139, 92, 246, 0.4)',
+    boxShadow: '0 0 16px rgba(192, 57, 43, 0.4)',
   },
   logoText: {
     fontFamily: 'var(--font-display)',
@@ -676,6 +676,10 @@ const styles = {
     fontWeight: '600',
     marginTop: '8px',
     transition: 'background-color 0.2s',
+    backgroundColor: 'var(--accent)',
+    ':hover': {
+      backgroundColor: 'var(--accent-hover)',
+    }
   },
   googleBtn: {
     width: '100%',

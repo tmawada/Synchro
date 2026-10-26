@@ -139,6 +139,22 @@ export const LinkIcon = withSvg(({ size, className, ...props }) => (
   </svg>
 ));
 
+export const UnlinkIcon = withSvg(({ size, className, ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    <path d="M22 2L2 22" strokeWidth="1.5" />
+  </svg>
+));
+
+export const RefreshIcon = withSvg(({ size, className, ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+    <path d="M23 4v6h-6" />
+    <path d="M1 20v-6h6" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+  </svg>
+));
+
 // Brand Icons
 export const GmailIcon = ({ size = 20, className = '' }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} className={className} style={{ fill: 'none' }}>
