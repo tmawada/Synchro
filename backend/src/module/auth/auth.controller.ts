@@ -65,7 +65,7 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
     const user = req.user as { accessToken: string; user: { id: string; email: string; name: string } };
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://10.22.65.155:5173');
 
     // Redirect to frontend with the JWT token as a query param
     const redirectUrl = `${frontendUrl}/auth/callback?token=${user.accessToken}`;

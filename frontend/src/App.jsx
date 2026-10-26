@@ -17,7 +17,7 @@ import CalendarView from './components/CalendarView';
 import TasksView from './components/TasksView';
 import ComposeModal from './components/ComposeModal';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3030';
+const API_URL = import.meta.env.VITE_API_URL || 'http://10.22.65.155:3030';
 
 export default function App() {
   // Navigation & Login

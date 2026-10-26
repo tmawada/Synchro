@@ -19,7 +19,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:3030
+        VITE_API_URL: http://10.22.65.155:3030
     container_name: synchro-frontend
     ports:
       - "5173:80"
