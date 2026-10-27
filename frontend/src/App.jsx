@@ -17,7 +17,7 @@ import CalendarView from './components/CalendarView';
 import TasksView from './components/TasksView';
 import ComposeModal from './components/ComposeModal';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://10.22.65.155:3030';
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
 
 export default function App() {
   // Navigation & Login
@@ -298,6 +298,7 @@ export default function App() {
     try {
       const res = await fetch(`${API_URL}/auth/ticktick-tasks`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
       });
       if (res.ok) {
         const data = await res.json();
@@ -309,6 +310,8 @@ export default function App() {
           setTickTickConnected(data.connected);
           localStorage.setItem('synchro_ticktick_connected', String(data.connected));
         }
+      } else {
+        console.error(`Failed to fetch TickTick tasks: HTTP ${res.status}`);
       }
     } catch (err) {
       console.error('Failed to fetch TickTick tasks:', err);

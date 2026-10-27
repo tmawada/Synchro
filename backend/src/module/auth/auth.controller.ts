@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Header,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -65,7 +66,7 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   async googleAuthCallback(@Req() req: Request, @Res() res: Response) {
     const user = req.user as { accessToken: string; user: { id: string; email: string; name: string } };
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://10.22.65.155:5173');
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
 
     // Redirect to frontend with the JWT token as a query param
     const redirectUrl = `${frontendUrl}/auth/callback?token=${user.accessToken}`;
@@ -101,9 +102,13 @@ export class AuthController {
    * GET /auth/ticktick-tasks
    * Get tasks from user's connected TickTick account (protected).
    * Returns converted tasks in Synchro format.
+   * Cache-Control: no-store — prevents the browser from revalidating with
+   * If-None-Match and getting an empty 304 (which the frontend treats as
+   * a failed fetch because 304 is not in the 2xx range).
    */
   @Get('ticktick-tasks')
   @UseGuards(JwtAuthGuard)
+  @Header('Cache-Control', 'no-store')
   async getTickTickTasks(@Req() req: Request) {
     const user = req.user as { id: string };
     return this.authService.getTickTickTasks(user.id);
