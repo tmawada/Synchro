@@ -580,7 +580,7 @@ export class AuthService {
     userId: string,
     taskId: string,
     projectId: string,
-    body: { title?: string; priority?: number; dueDate?: string; completed?: boolean },
+    body: { title?: string; priority?: number; dueDate?: string | null; completed?: boolean },
   ) {
     const ticktickAccount = await this.prisma.account.findFirst({
       where: { userId, provider: 'ticktick' },
@@ -597,9 +597,10 @@ export class AuthService {
       return { success: true };
     }
 
-    const patch: { title?: string; priority?: number; dueDate?: string; status?: number } = {};
+    const patch: { title?: string; priority?: number; dueDate?: string | null; status?: number } = {};
     if (body.title !== undefined) patch.title = body.title;
     if (body.priority !== undefined) patch.priority = body.priority;
+    // An empty/null due date clears the date on TickTick
     if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
     if (body.completed === false) patch.status = 0;
 

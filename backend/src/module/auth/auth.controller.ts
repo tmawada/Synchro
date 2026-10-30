@@ -176,7 +176,7 @@ export class AuthController {
     @Req() req: Request,
     @Param('taskId') taskId: string,
     @Query('projectId') projectId: string,
-    @Body() body: { title?: string; priority?: number; dueDate?: string; completed?: boolean },
+    @Body() body: { title?: string; priority?: number; dueDate?: string | null; completed?: boolean },
   ) {
     if (!projectId) {
       throw new BadRequestException('projectId query parameter is required');

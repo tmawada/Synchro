@@ -202,12 +202,15 @@ export class TickTickService {
     accessToken: string,
     projectId: string,
     taskId: string,
-    body: { title?: string; priority?: number; dueDate?: string; status?: number },
+    body: { title?: string; priority?: number; dueDate?: string | null; status?: number },
   ): Promise<boolean> {
     const payload: Record<string, unknown> = { projectId, ...body };
 
     // TickTick expects a full timestamp; keep it an all-day task when user falls back on dueDate
-    if (typeof payload.dueDate === 'string') {
+    if (payload.dueDate === null || payload.dueDate === '') {
+      // Explicitly clear the date (null removes it; an empty string is ignored by TickTick)
+      payload.dueDate = null;
+    } else if (typeof payload.dueDate === 'string') {
       const date = new Date(payload.dueDate);
       if (!isNaN(date.getTime())) {
         payload.dueDate = date.toISOString().replace('Z', '+0000');
@@ -308,7 +311,7 @@ export class TickTickService {
     priority: 'low' | 'medium' | 'high';
     listType: 'work' | 'personal' | 'routine';
     duration: number;
-    dueDate: string;
+    dueDate: string | null;
     completed: boolean;
     emailRef: null;
     source: 'ticktick';
@@ -335,14 +338,12 @@ export class TickTickService {
       listType = 'routine';
     }
 
-    // Parse due date
-    let dueDate = new Date().toISOString().split('T')[0];
+    // Parse due date — stay empty when the task has none
+    let dueDate: string | null = null;
     if (ticktickTask.dueDate) {
-      try {
-        const date = new Date(ticktickTask.dueDate);
+      const date = new Date(ticktickTask.dueDate);
+      if (!isNaN(date.getTime())) {
         dueDate = date.toISOString().split('T')[0];
-      } catch {
-        // fallback to today
       }
     }
 

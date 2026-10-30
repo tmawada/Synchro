@@ -368,7 +368,7 @@ export default function MailView({
               ))}
             </div>
 
-            {/* Mock Attachments */}
+            {/* Attachments */}
             {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
               <div style={styles.attachmentsSection}>
                 <div style={styles.attachmentsTitle}>Attachments ({selectedEmail.attachments.length})</div>

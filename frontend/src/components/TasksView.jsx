@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon, EditIcon, CloseIcon } from './Icons';
+import React, { useState, useEffect, useMemo } from 'react';
+import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon, EditIcon, CloseIcon, MoreVerticalIcon } from './Icons';
 
 // TickTick-style priority shortcuts: type "!high", "!medium" or "!low" in the title
 const PRIORITY_SUGGESTIONS = [
@@ -114,6 +114,21 @@ export default function TasksView({
   const [suggestIdx, setSuggestIdx] = useState(0);
   const [dismissedToken, setDismissedToken] = useState(null);
 
+  // Which task's 3-dot menu is open (task id, or null)
+  const [openMenuTaskId, setOpenMenuTaskId] = useState(null);
+
+  // Close the 3-dot menu when clicking outside of it
+  useEffect(() => {
+    if (!openMenuTaskId) return;
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('[data-task-menu-wrapper]')) {
+        setOpenMenuTaskId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openMenuTaskId]);
+
   const isTickTickTask = (task) => task.source === 'ticktick';
 
   const composerSuggest = getSuggestions(title);
@@ -182,7 +197,7 @@ export default function TasksView({
       priority: typedPriority || priority,
       listType,
       duration: parseInt(duration),
-      dueDate: dueDate || new Date().toISOString().split('T')[0],
+      dueDate: dueDate || null,
       completed: false,
       emailRef: null // will be null unless created from email
     };
@@ -210,7 +225,7 @@ export default function TasksView({
     setEditPriority(task.priority);
     setEditListType(task.listType);
     setEditDuration(task.duration);
-    setEditDueDate(task.dueDate);
+    setEditDueDate(task.dueDate || '');
     setSuggestIdx(0);
     setDismissedToken(null);
   };
@@ -235,7 +250,8 @@ export default function TasksView({
     const patch = {
       title: cleanTitle,
       priority: typedPriority || editPriority,
-      dueDate: editDueDate || editingTask.dueDate,
+      // Empty input clears the due date
+      dueDate: editDueDate || null,
     };
     // listType/duration only exist in Synchro — TickTick tasks keep their synced values
     if (!fromTickTick) {
@@ -565,45 +581,41 @@ export default function TasksView({
                       </div>
                     </button>
 
-                    <span style={{ ...styles.dueDateChip, ...getDueStyle(task) }}>
-                      {formatDueLabel(task.dueDate)}
-                    </span>
-
                     <div style={styles.taskContent}>
-                      <span style={{
-                        ...styles.taskTitle,
-                        textDecoration: task.completed ? 'line-through' : 'none',
-                        color: task.completed ? 'var(--text-muted)' : 'var(--text-primary)'
-                      }}>
-                        {task.title}
-                      </span>
-                      
-                      <div style={styles.taskDetails}>
+                      <div style={styles.taskTitleRow}>
+                        <span style={{
+                          ...styles.taskTitle,
+                          textDecoration: task.completed ? 'line-through' : 'none',
+                          color: task.completed ? 'var(--text-muted)' : 'var(--text-primary)'
+                        }}>
+                          {task.title}
+                        </span>
                         <span style={{ ...styles.prioTag, color: prio.color, backgroundColor: prio.bg }}>
                           {task.priority}
                         </span>
-                        <span style={styles.detailText}>
-                          Est: {task.duration} mins
-                        </span>
-
-                        {isTickTickTask(task) && task.projectName && (
-                          <span style={{ ...styles.prioTag, color: 'var(--primary)', backgroundColor: 'rgba(139, 92, 246, 0.15)', fontSize: '9px' }}>
-                            <LinkIcon size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
-                            {task.projectName}
-                          </span>
-                        )}
-
-                        {task.emailRef && (
-                          <button
-                            style={styles.emailRefBtn}
-                            onClick={() => onOpenEmail(task.emailRef)}
-                            title="Open related email details"
-                          >
-                            <MailIcon size={11} style={{ marginRight: '4px' }} />
-                            Mail Link
-                          </button>
-                        )}
                       </div>
+
+                      {(task.emailRef || (isTickTickTask(task) && task.projectName && task.projectName.toLowerCase() !== 'inbox')) && (
+                        <div style={styles.taskDetails}>
+                          {isTickTickTask(task) && task.projectName && task.projectName.toLowerCase() !== 'inbox' && (
+                            <span style={{ ...styles.prioTag, color: 'var(--primary)', backgroundColor: 'rgba(139, 92, 246, 0.15)', fontSize: '9px' }}>
+                              <LinkIcon size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
+                              {task.projectName}
+                            </span>
+                          )}
+
+                          {task.emailRef && (
+                            <button
+                              style={styles.emailRefBtn}
+                              onClick={() => onOpenEmail(task.emailRef)}
+                              title="Open related email details"
+                            >
+                              <MailIcon size={11} style={{ marginRight: '4px' }} />
+                              Mail Link
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div style={styles.taskActions}>
@@ -618,13 +630,53 @@ export default function TasksView({
                           Block Time
                         </button>
                       )}
-                      <button
-                        style={styles.deleteBtn}
-                        onClick={() => onDeleteTask(task)}
-                        title={isTickTickTask(task) ? 'Delete from TickTick' : 'Delete Task'}
+                      {/* Due date sits at the middle-right of the row */}
+                      {task.dueDate && (
+                        <span style={{ ...styles.dueDateChip, ...getDueStyle(task) }}>
+                          {formatDueLabel(task.dueDate)}
+                        </span>
+                      )}
+
+                      {/* 3-dot menu: edit / delete */}
+                      <div
+                        data-task-menu-wrapper
+                        style={styles.taskMenuWrapper}
                       >
-                        <TrashIcon size={14} />
-                      </button>
+                        <button
+                          className="task-menu-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuTaskId(openMenuTaskId === task.id ? null : task.id);
+                          }}
+                          title="Task options"
+                        >
+                          <MoreVerticalIcon size={16} />
+                        </button>
+                        {openMenuTaskId === task.id && (
+                          <div style={styles.taskMenu} className="glass-panel">
+                            <button
+                              className="task-menu-item"
+                              onClick={() => {
+                                setOpenMenuTaskId(null);
+                                openEdit(task);
+                              }}
+                            >
+                              <EditIcon size={14} />
+                              Edit
+                            </button>
+                            <button
+                              className="task-menu-item task-menu-item-danger"
+                              onClick={() => {
+                                setOpenMenuTaskId(null);
+                                onDeleteTask(task);
+                              }}
+                            >
+                              <TrashIcon size={14} />
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -996,7 +1048,8 @@ const styles = {
     fontWeight: '600',
     minWidth: '62px',
     flexShrink: 0,
-    textAlign: 'left',
+    textAlign: 'right',
+    whiteSpace: 'nowrap',
   },
   checkboxBtn: {
     display: 'flex',
@@ -1021,6 +1074,12 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
+  },
+  taskTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
   },
   taskTitle: {
     fontSize: '14.5px',
@@ -1065,15 +1124,23 @@ const styles = {
     borderRadius: '6px',
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
-  deleteBtn: {
+  taskMenuWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  taskMenu: {
+    position: 'absolute',
+    top: 'calc(100% + 6px)',
+    right: 0,
+    minWidth: '150px',
     padding: '6px',
-    borderRadius: '6px',
-    color: 'var(--text-muted)',
-    transition: 'color 0.2s, background-color 0.2s',
-    ':hover': {
-      color: 'var(--danger)',
-      backgroundColor: 'rgba(239,68,68,0.05)',
-    }
+    borderRadius: '10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+    zIndex: 100,
   },
   closeModalBtn: {
     display: 'flex',

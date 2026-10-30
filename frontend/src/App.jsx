@@ -137,146 +137,21 @@ export default function App() {
   }, [isLoggedIn, authUser]);
 
   // Data States
+  // Dummy seed records from earlier builds are filtered out so they don't
+  // linger in users' localStorage after the seed data is removed.
+  const DUMMY_EMAIL_IDS = ['mail_1', 'mail_2', 'mail_3', 'mail_4', 'mail_5'];
+  const DUMMY_TASK_IDS = ['task_1', 'task_2', 'task_3', 'task_4', 'task_5'];
+
   const [emails, setEmails] = useState(() => {
     const saved = localStorage.getItem('synchro_emails');
-    if (saved) return JSON.parse(saved);
-    
-    // Default initial mock emails
-    return [
-      {
-        id: 'mail_1',
-        subject: 'Weekly Product Sync Proposal',
-        sender: 'alice.vance@company.com',
-        senderName: 'Alice Vance',
-        to: 'me',
-        account: 'work@outlook.com',
-        body: "Hey team,\n\nLet's align on the new Synchro app layout. I would like to schedule a 45-minute syncing session this Wednesday or Thursday to review the time blocking mockup and list integration.\n\nLet me know what slot works for you!\n\nBest,\nAlice Vance",
-        folder: 'inbox',
-        date: '09:24 AM',
-        isRead: false,
-        isStarred: true,
-        attachments: [{ name: 'Synchro_v1_Pitch.pdf', size: '4.2 MB' }],
-        replies: []
-      },
-      {
-        id: 'mail_2',
-        subject: 'IT Security Keys Expiration Alert',
-        sender: 'admin@serverhq.com',
-        senderName: 'SysAdmin IT',
-        to: 'me',
-        account: 'work@outlook.com',
-        body: "Hi developer,\n\nYour server security keys are set to expire in 3 days. Please review the security policy changes and perform a key rotation as soon as possible.\n\nFeel free to block time in my calendar if you run into any issues during the deployment.\n\nThanks,\nIT Department",
-        folder: 'inbox',
-        date: 'Yesterday',
-        isRead: true,
-        isStarred: false,
-        attachments: [],
-        replies: []
-      },
-      {
-        id: 'mail_3',
-        subject: 'Google Workspace Billing Invoice',
-        sender: 'billing-noreply@google.com',
-        senderName: 'Google Workspace Billing',
-        to: 'personal@gmail.com',
-        account: 'personal@gmail.com',
-        body: "Dear Customer,\n\nYour monthly subscription invoice for Google Workspace is now available.\nAmount Due: $18.00\n\nPayment method ending in *4242 will be charged automatically on July 2nd. If you want to update your billing details, please visit the admin billing console.",
-        folder: 'inbox',
-        date: 'Yesterday',
-        isRead: true,
-        isStarred: false,
-        attachments: [{ name: 'Invoice_2026_06.pdf', size: '128 KB' }],
-        replies: []
-      },
-      {
-        id: 'mail_4',
-        subject: 'Yahoo News: Major Tech Shifts in 2026',
-        sender: 'news@yahoo-inc.com',
-        senderName: 'Yahoo News',
-        to: 'leisure@yahoo.com',
-        account: 'leisure@yahoo.com',
-        body: "Welcome to Yahoo Technology newsletter!\n\nThis week, we analyze the surge in AI agent workspace integrations, the evolution of browser sandboxes, and why developers are reverting to vanilla CSS frameworks for responsiveness. Read on for the full analysis.",
-        folder: 'inbox',
-        date: '2 Days ago',
-        isRead: true,
-        isStarred: false,
-        attachments: [],
-        replies: []
-      },
-      {
-        id: 'mail_5',
-        subject: 'Welcome to Synchro Workspace!',
-        sender: 'onboarding@synchro.io',
-        senderName: 'Synchro Team',
-        to: 'personal@gmail.com',
-        account: 'personal@gmail.com',
-        body: "Hi there!\n\nWelcome to Synchro, your unified environment for mail client folders, tasks, and routine-blocking calendars.\n\nYou can integrate Gmail, Outlook, Yahoo, or custom accounts in seconds. Try converting this email into a task or scheduling a time block directly from the reader toolbar.\n\nEnjoy!\nSynchro Team",
-        folder: 'inbox',
-        date: '3 Days ago',
-        isRead: false,
-        isStarred: true,
-        attachments: [],
-        replies: []
-      }
-    ];
+    if (!saved) return [];
+    return JSON.parse(saved).filter((m) => !DUMMY_EMAIL_IDS.includes(m.id));
   });
 
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('synchro_tasks');
-    if (saved) return JSON.parse(saved);
-
-    return [
-      {
-        id: 'task_1',
-        title: "Review Alice's proposal & send confirmation email",
-        priority: 'high',
-        listType: 'work',
-        duration: 45,
-        dueDate: '2026-06-29',
-        completed: false,
-        emailRef: 'mail_1'
-      },
-      {
-        id: 'task_2',
-        title: 'Rotate server security credentials',
-        priority: 'high',
-        listType: 'work',
-        duration: 30,
-        dueDate: '2026-07-02',
-        completed: false,
-        emailRef: 'mail_2'
-      },
-      {
-        id: 'task_3',
-        title: 'Set up morning meditation and stretching routine',
-        priority: 'low',
-        listType: 'routine',
-        duration: 60,
-        dueDate: '2026-06-29',
-        completed: false,
-        emailRef: null
-      },
-      {
-        id: 'task_4',
-        title: 'Verify Google Workspace invoice details',
-        priority: 'medium',
-        listType: 'personal',
-        duration: 30,
-        dueDate: '2026-07-01',
-        completed: false,
-        emailRef: 'mail_3'
-      },
-      {
-        id: 'task_5',
-        title: 'Buy groceries for tonight\'s dinner recipe',
-        priority: 'low',
-        listType: 'personal',
-        duration: 45,
-        dueDate: '2026-06-29',
-        completed: true,
-        emailRef: null
-      }
-    ];
+    if (!saved) return [];
+    return JSON.parse(saved).filter((t) => !DUMMY_TASK_IDS.includes(t.id));
   });
 
   // TickTick Tasks State

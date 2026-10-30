@@ -8,7 +8,8 @@ import { AuthModule } from './module/auth/auth.module';
 @Module({
   // Buat module terpisah perfunction dan regis ke imports 
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // expandVariables lets .env values reference other vars, e.g. API="http://...:3030" → GOOGLE_CALLBACK_URL="${API}/auth/google/callback"
+    ConfigModule.forRoot({ isGlobal: true, expandVariables: true }),
     PrismaModule,
     AuthModule,
   ],
