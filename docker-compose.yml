@@ -5,7 +5,9 @@ services:
     container_name: synchro-backend
     # Host networking so the backend can reach the PostgreSQL server through
     # the FortiClient VPN (bridge NAT traffic is blocked by the VPN client)
-    network_mode: host
+    # network_mode: host
+    ports:
+      - "3030:3030"
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -13,8 +15,10 @@ services:
       - ./backend/.env
     environment:
       NODE_ENV: development
-      FRONTEND_URL: http://${HOST_IP}:5173
-      GOOGLE_CALLBACK_URL: http://${HOST_IP}:3030/auth/google/callback
+      # FRONTEND_URL: http://${HOST_IP}:5173
+      # GOOGLE_CALLBACK_URL: http://${HOST_IP}:3030/auth/google/callback
+    networks:
+      - synchro-net
 
   frontend:
     build:
@@ -33,3 +37,8 @@ services:
       CHOKIDAR_USEPOLLING: "true"
     depends_on:
       - backend
+    networks:
+      - synchro-net
+
+networks:
+  synchro-net:

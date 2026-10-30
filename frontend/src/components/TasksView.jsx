@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon } from './Icons';
+import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon, EditIcon, CloseIcon } from './Icons';
 
 export default function TasksView({
   tasks,
@@ -7,7 +7,7 @@ export default function TasksView({
   ticktickConnected = false,
   ticktickLoading = false,
   onAddTask,
-  onUpdateTasks,
+  onUpdateTask,
   onDeleteTask,
   onScheduleTaskOnCalendar,
   onTriggerNotification,
@@ -23,8 +23,32 @@ export default function TasksView({
   const [duration, setDuration] = useState(60); // minutes
   const [dueDate, setDueDate] = useState('');
   const [showTickTickSettings, setShowTickTickSettings] = useState(false);
+  const [showTickTickModal, setShowTickTickModal] = useState(false);
+  const [ticktickToken, setTicktickToken] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  const handleSubmit = (e) => {
+  // Edit modal state
+  const [editingTask, setEditingTask] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editPriority, setEditPriority] = useState('medium');
+  const [editListType, setEditListType] = useState('work');
+  const [editDuration, setEditDuration] = useState(60);
+  const [editDueDate, setEditDueDate] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const isTickTickTask = (task) => task.source === 'ticktick';
+
+  const handleConnectSubmit = async (e) => {
+    e.preventDefault();
+    if (!ticktickToken.trim() || isConnecting) return;
+    setIsConnecting(true);
+    await onConnectTickTick(ticktickToken.trim());
+    setIsConnecting(false);
+    setShowTickTickModal(false);
+    setTicktickToken('');
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!title.trim()) return;
 
@@ -39,23 +63,69 @@ export default function TasksView({
       emailRef: null // will be null unless created from email
     };
 
-    onAddTask(newTask);
+    const ok = await onAddTask(newTask);
+    if (ok === false) return; // creation failed (error toast already shown)
+
     setTitle('');
     setPriority('medium');
     setListType('work');
     setDuration(60);
     setDueDate('');
-    onTriggerNotification(`Task "${title}" added!`);
+    onTriggerNotification(
+      ticktickConnected
+        ? `Task "${newTask.title}" created in TickTick!`
+        : `Task "${newTask.title}" added!`
+    );
   };
 
-  const toggleTaskCompleted = (taskId) => {
-    const updated = allTasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
-    onUpdateTasks(updated);
+  const openEdit = (task) => {
+    setEditingTask(task);
+    setEditTitle(task.title);
+    setEditPriority(task.priority);
+    setEditListType(task.listType);
+    setEditDuration(task.duration);
+    setEditDueDate(task.dueDate);
   };
 
-  // Merge local tasks with TickTick tasks
-  // TickTick tasks are read-only (source === 'ticktick')
-  // Local tasks can be modified/deleted
+  const closeEdit = () => {
+    setEditingTask(null);
+    setIsSaving(false);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingTask || !editTitle.trim() || isSaving) return;
+
+    const fromTickTick = isTickTickTask(editingTask);
+    const patch = {
+      title: editTitle.trim(),
+      priority: editPriority,
+      dueDate: editDueDate || editingTask.dueDate,
+    };
+    // listType/duration only exist in Synchro — TickTick tasks keep their synced values
+    if (!fromTickTick) {
+      patch.listType = editListType;
+      patch.duration = parseInt(editDuration);
+    }
+
+    setIsSaving(true);
+    const ok = await onUpdateTask(editingTask, patch);
+    setIsSaving(false);
+    if (ok === false) return; // update failed (error toast already shown)
+
+    closeEdit();
+    if (!fromTickTick) {
+      onTriggerNotification(`Task updated: "${patch.title}"`);
+    }
+    // TickTick updates already trigger a toast from App's handler
+  };
+
+  const toggleTaskCompleted = async (task) => {
+    await onUpdateTask(task, { completed: !task.completed });
+  };
+
+  // Merge local tasks with TickTick tasks (both are fully editable;
+  // App routes updates/deletes to the TickTick API or local state)
   const allTasks = useMemo(() => {
     if (!ticktickConnected || ticktickTasks.length === 0) {
       return tasks;
@@ -86,8 +156,6 @@ export default function TasksView({
     // 'all' includes uncompleted tasks
     return !t.completed;
   });
-
-  const isTickTickTask = (task) => task.source === 'ticktick';
 
   const getPriorityStyle = (prio) => {
     switch (prio) {
@@ -196,7 +264,7 @@ export default function TasksView({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
             <button
               style={{ ...styles.navItem, padding: '6px 12px', fontSize: '12px' }}
-              onClick={onConnectTickTick}
+              onClick={() => setShowTickTickModal(true)}
               title="Connect TickTick"
             >
               <SettingsIcon size={14} /> Connect
@@ -206,7 +274,6 @@ export default function TasksView({
             </span>
           </div>
         )}
-
         {/* TickTick sync status when loading */}
         {ticktickLoading && (
           <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -231,9 +298,16 @@ export default function TasksView({
               />
               <button type="submit" style={styles.addTaskBtn}>
                 <PlusIcon size={16} style={{ marginRight: '6px' }} />
-                Add Task
+                {ticktickConnected ? 'Add to TickTick' : 'Add Task'}
               </button>
             </div>
+
+            {ticktickConnected && (
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                <LinkIcon size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                New tasks are created in your TickTick account, not stored locally.
+              </div>
+            )}
 
             <div style={styles.composerSecondRow}>
               <div style={styles.settingGroup}>
@@ -303,7 +377,8 @@ export default function TasksView({
                   <div key={task.id} style={styles.taskCard} className="glass-panel">
                     <button 
                       style={styles.checkboxBtn} 
-                      onClick={() => toggleTaskCompleted(task.id)}
+                      onClick={() => toggleTaskCompleted(task)}
+                      title={task.completed ? 'Mark as pending' : 'Mark as completed'}
                     >
                       <div style={{
                         ...styles.checkbox,
@@ -367,22 +442,19 @@ export default function TasksView({
                         </button>
                       )}
                       <button
-                        style={styles.deleteBtn}
-                        onClick={() => {
-                          if (isTickTickTask(task)) {
-                            onTriggerNotification(`Cannot delete TickTick task: "${task.title}" - read-only source`);
-                            return;
-                          }
-                          onDeleteTask(task.id);
-                          onTriggerNotification(`Deleted task: "${task.title}"`);
-                        }}
-                        title={isTickTickTask(task) ? 'Cannot delete (TickTick source)' : 'Delete Task'}
+                        style={styles.editBtn}
+                        className="glass-panel-interactive"
+                        onClick={() => openEdit(task)}
+                        title="Edit Task"
                       >
-                        {isTickTickTask(task) ? (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}><TrashIcon size={12} /> Read-only</span>
-                        ) : (
-                          <TrashIcon size={14} />
-                        )}
+                        <EditIcon size={14} />
+                      </button>
+                      <button
+                        style={styles.deleteBtn}
+                        onClick={() => onDeleteTask(task)}
+                        title={isTickTickTask(task) ? 'Delete from TickTick' : 'Delete Task'}
+                      >
+                        <TrashIcon size={14} />
                       </button>
                     </div>
                   </div>
@@ -392,6 +464,127 @@ export default function TasksView({
           </div>
         </div>
       </div>
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <div style={styles.ticktickModalOverlay} onClick={closeEdit}>
+          <div style={styles.ticktickModal} className="glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <EditIcon size={16} />
+                <h3 style={{ margin: 0, fontSize: '15px' }}>Edit Task</h3>
+              </div>
+              <button style={styles.closeModalBtn} onClick={closeEdit} title="Close">
+                <CloseIcon size={14} />
+              </button>
+            </div>
+
+            {isTickTickTask(editingTask) && (
+              <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                <LinkIcon size={11} style={{ marginRight: '4px', verticalAlign: 'middle' }} />
+                Synced with TickTick &mdash; title, priority and due date are saved to TickTick.
+              </p>
+            )}
+
+            <form onSubmit={handleEditSubmit} style={styles.editForm}>
+              <div style={styles.editField}>
+                <span style={styles.settingLabel}>Title:</span>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  style={styles.editInput}
+                />
+              </div>
+
+              <div style={styles.editField}>
+                <span style={styles.settingLabel}>Priority:</span>
+                <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)} style={styles.composerSelect}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+
+              <div style={styles.editField}>
+                <span style={styles.settingLabel}>Due:</span>
+                <input
+                  type="date"
+                  value={editDueDate}
+                  onChange={(e) => setEditDueDate(e.target.value)}
+                  style={styles.datePicker}
+                />
+              </div>
+
+              {!isTickTickTask(editingTask) && (
+                <>
+                  <div style={styles.editField}>
+                    <span style={styles.settingLabel}>List:</span>
+                    <select value={editListType} onChange={(e) => setEditListType(e.target.value)} style={styles.composerSelect}>
+                      <option value="work">Work</option>
+                      <option value="personal">Personal</option>
+                      <option value="routine">Routine</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.editField}>
+                    <span style={styles.settingLabel}>Duration:</span>
+                    <select value={editDuration} onChange={(e) => setEditDuration(parseInt(e.target.value))} style={styles.composerSelect}>
+                      <option value={30}>30 min</option>
+                      <option value={45}>45 min</option>
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hour</option>
+                      <option value={120}>2 hours</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                <button type="button" style={styles.cancelEditBtn} onClick={closeEdit}>
+                  Cancel
+                </button>
+                <button type="submit" style={styles.saveEditBtn} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TickTick Connect Modal */}
+      {showTickTickModal && (
+        <div style={styles.ticktickModalOverlay} onClick={() => setShowTickTickModal(false)}>
+          <div style={styles.ticktickModal} className="glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <LinkIcon size={16} />
+              <h3 style={{ margin: 0, fontSize: '15px' }}>Connect TickTick</h3>
+            </div>
+            <p style={{ margin: '0 0 14px 0', fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              Paste your TickTick personal API token. Get it from TickTick web:
+              <br />
+              <strong>Settings &rarr; Open API</strong> (token starts with <code>tp_</code>)
+            </p>
+            <form onSubmit={handleConnectSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input
+                type="password"
+                required
+                autoFocus
+                placeholder="tp_xxxxxxxxxxxxxxxxxxxxxxxx"
+                value={ticktickToken}
+                onChange={(e) => setTicktickToken(e.target.value)}
+                style={styles.ticktickInput}
+              />
+              <button type="submit" style={styles.ticktickConnectBtn} disabled={isConnecting}>
+                {isConnecting ? 'Connecting...' : 'Connect'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -402,6 +595,44 @@ const styles = {
     height: '100%',
     width: '100%',
     backgroundColor: 'var(--bg-secondary)',
+  },
+  ticktickModalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(8px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  ticktickModal: {
+    width: '360px',
+    padding: '24px',
+    borderRadius: '12px',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+  },
+  ticktickInput: {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    background: 'rgba(0,0,0,0.2)',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    boxSizing: 'border-box',
+  },
+  ticktickConnectBtn: {
+    width: '100%',
+    padding: '10px',
+    borderRadius: '8px',
+    backgroundColor: 'var(--primary)',
+    color: '#ffffff',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    border: 'none',
+    opacity: 1,
   },
   sidebar: {
     width: '220px',
@@ -635,6 +866,73 @@ const styles = {
       color: 'var(--danger)',
       backgroundColor: 'rgba(239,68,68,0.05)',
     }
+  },
+  editBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6px',
+    borderRadius: '6px',
+    color: 'var(--text-muted)',
+    transition: 'color 0.2s, background-color 0.2s',
+    ':hover': {
+      color: 'var(--primary)',
+      backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    }
+  },
+  closeModalBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6px',
+    borderRadius: '6px',
+    color: 'var(--text-muted)',
+    transition: 'color 0.2s, background-color 0.2s',
+    ':hover': {
+      color: 'var(--text-primary)',
+      backgroundColor: 'rgba(255,255,255,0.06)',
+    }
+  },
+  editForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  editField: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+  editInput: {
+    flexGrow: 1,
+    padding: '9px 12px',
+    borderRadius: '8px',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    border: '1px solid var(--border-color)',
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+  },
+  cancelEditBtn: {
+    flex: 1,
+    padding: '10px',
+    borderRadius: '8px',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-secondary)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  saveEditBtn: {
+    flex: 2,
+    padding: '10px',
+    borderRadius: '8px',
+    backgroundColor: 'var(--primary)',
+    color: '#ffffff',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    border: 'none',
   },
   ticktickConnected: {
     display: 'flex',

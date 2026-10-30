@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -542,6 +542,87 @@ export class AuthService {
       });
     }
 
+    return { success: true };
+  }
+
+  /**
+   * Create a task in the user's TickTick account.
+   * Returns the created task converted to Synchro format.
+   */
+  async createTickTickTask(
+    userId: string,
+    body: { title: string; projectId?: string; priority?: number; dueDate?: string; content?: string },
+  ) {
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (!ticktickAccount?.ticktickAccessToken) {
+      throw new BadRequestException('TickTick is not connected.');
+    }
+
+    const token = ticktickAccount.ticktickAccessToken;
+    const created = await this.tickTickService.createTask(token, body);
+
+    // Projects are needed to derive projectName/listType for the Synchro shape
+    const projects = await this.tickTickService.getProjects(token);
+
+    return {
+      success: true,
+      task: this.tickTickService.convertToSynchroTask(created, projects),
+    };
+  }
+
+  /**
+   * Update a TickTick task (title/priority/dueDate) or mark it complete.
+   */
+  async updateTickTickTask(
+    userId: string,
+    taskId: string,
+    projectId: string,
+    body: { title?: string; priority?: number; dueDate?: string; completed?: boolean },
+  ) {
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (!ticktickAccount?.ticktickAccessToken) {
+      throw new BadRequestException('TickTick is not connected.');
+    }
+
+    const token = ticktickAccount.ticktickAccessToken;
+
+    if (body.completed === true) {
+      await this.tickTickService.completeTask(token, projectId, taskId);
+      return { success: true };
+    }
+
+    const patch: { title?: string; priority?: number; dueDate?: string; status?: number } = {};
+    if (body.title !== undefined) patch.title = body.title;
+    if (body.priority !== undefined) patch.priority = body.priority;
+    if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
+    if (body.completed === false) patch.status = 0;
+
+    if (Object.keys(patch).length > 0) {
+      await this.tickTickService.updateTask(token, projectId, taskId, patch);
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Delete a TickTick task.
+   */
+  async deleteTickTickTask(userId: string, taskId: string, projectId: string) {
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (!ticktickAccount?.ticktickAccessToken) {
+      throw new BadRequestException('TickTick is not connected.');
+    }
+
+    await this.tickTickService.deleteTask(ticktickAccount.ticktickAccessToken, projectId, taskId);
     return { success: true };
   }
 

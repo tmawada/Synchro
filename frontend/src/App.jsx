@@ -19,6 +19,10 @@ import ComposeModal from './components/ComposeModal';
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
 
+// Synchro priority -> TickTick numeric priority (0=none, 1=low, 3=medium, 5=high)
+const TICKTICK_PRIORITY = { low: 1, medium: 3, high: 5 };
+const TICKTICK_PRIORITY_REVERSE = { 0: 'low', 1: 'low', 2: 'low', 3: 'medium', 4: 'high', 5: 'high' };
+
 export default function App() {
   // Navigation & Login
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -424,6 +428,10 @@ export default function App() {
     localStorage.setItem('synchro_events', JSON.stringify(events));
   }, [events]);
 
+  useEffect(() => {
+    localStorage.setItem('synchro_ticktick_tasks', JSON.stringify(ticktickTasks));
+  }, [ticktickTasks]);
+
   // Toast Notification triggers
   const triggerNotification = (message) => {
     setNotification({ show: true, message });
@@ -518,6 +526,145 @@ export default function App() {
     }
   };
 
+  // Create a task in TickTick (used for all new tasks when TickTick is connected)
+  const handleCreateTickTickTask = async (task) => {
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return false;
+
+    try {
+      const res = await fetch(`${API_URL}/auth/ticktick/tasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: task.title,
+          priority: TICKTICK_PRIORITY[task.priority] ?? 0,
+          dueDate: task.dueDate,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        triggerNotification(`Failed to create task in TickTick: ${data.message || 'HTTP ' + res.status}`);
+        return false;
+      }
+
+      if (data.task) {
+        setTickTickTasks(prev => [data.task, ...prev]);
+      }
+      return true;
+    } catch (err) {
+      console.error('Failed to create TickTick task:', err);
+      triggerNotification('Failed to create task in TickTick.');
+      return false;
+    }
+  };
+
+  // Add a task: syncs to TickTick when connected, otherwise stores locally
+  const handleAddTask = async (task) => {
+    if (ticktickConnected) {
+      return handleCreateTickTickTask(task);
+    }
+    setTasks(prev => [task, ...prev]);
+    return true;
+  };
+
+  // Update a task: routes TickTick tasks to the TickTick API, local tasks to state
+  const handleUpdateTask = async (task, patch) => {
+    if (task.source === 'ticktick') {
+      return handleUpdateTickTickTask(task, patch);
+    }
+    setTasks(prev => prev.map(t => (t.id === task.id ? { ...t, ...patch } : t)));
+    return true;
+  };
+
+  // Delete a task: routes TickTick tasks to the TickTick API, local tasks to state
+  const handleDeleteTask = async (task) => {
+    if (task.source === 'ticktick') {
+      return handleDeleteTickTickTask(task);
+    }
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+    triggerNotification(`Deleted task: "${task.title}"`);
+    return true;
+  };
+
+  // Update a TickTick task (title/priority/dueDate/complete)
+  const handleUpdateTickTickTask = async (task, patch) => {
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return;
+
+    // patch uses Synchro terms; convert priority for the API
+    const apiPatch = { ...patch };
+    if (patch.priority !== undefined) {
+      apiPatch.priority = TICKTICK_PRIORITY[patch.priority] ?? 0;
+    }
+
+    try {
+      const res = await fetch(
+        `${API_URL}/auth/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(apiPatch),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        triggerNotification(`Failed to update task: ${data.message || 'HTTP ' + res.status}`);
+        return false;
+      }
+
+      setTickTickTasks(prev =>
+        prev.map(t => {
+          if (t.ticktickId !== task.ticktickId) return t;
+          const next = { ...t };
+          if (patch.title !== undefined) next.title = patch.title;
+          if (patch.priority !== undefined) next.priority = TICKTICK_PRIORITY_REVERSE[apiPatch.priority] || 'low';
+          if (patch.dueDate !== undefined) next.dueDate = patch.dueDate;
+          if (patch.completed !== undefined) next.completed = patch.completed;
+          return next;
+        }),
+      );
+      triggerNotification('TickTick task updated.');
+      return true;
+    } catch (err) {
+      console.error('Failed to update TickTick task:', err);
+      triggerNotification('Failed to update task.');
+      return false;
+    }
+  };
+
+  // Delete a TickTick task
+  const handleDeleteTickTickTask = async (task) => {
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(
+        `${API_URL}/auth/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        triggerNotification(`Failed to delete task: ${data.message || 'HTTP ' + res.status}`);
+        return;
+      }
+
+      setTickTickTasks(prev => prev.filter(t => t.ticktickId !== task.ticktickId));
+      triggerNotification(`Deleted TickTick task: "${task.title}"`);
+    } catch (err) {
+      console.error('Failed to delete TickTick task:', err);
+      triggerNotification('Failed to delete task.');
+    }
+  };
+
   // Close profile dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -530,7 +677,7 @@ export default function App() {
   }, [isProfileOpen]);
 
   // Integration workflows
-  const handleConvertEmailToTask = (email) => {
+  const handleConvertEmailToTask = async (email) => {
     const newTask = {
       id: 'task_' + Date.now(),
       title: `Follow up: ${email.subject}`,
@@ -541,7 +688,8 @@ export default function App() {
       completed: false,
       emailRef: email.id
     };
-    setTasks(prev => [newTask, ...prev]);
+    const ok = await handleAddTask(newTask);
+    if (!ok) return;
     setActiveTab('tasks');
     triggerNotification('Created new task referencing this email!');
   };
@@ -657,9 +805,9 @@ export default function App() {
           >
             <CheckSquareIcon size={20} />
             <span style={styles.navText}>Tasks</span>
-            {tasks.filter(t => !t.completed).length > 0 && (
+            {(tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)) > 0 && (
               <div style={styles.badgeCount}>
-                {tasks.filter(t => !t.completed).length}
+                {tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)}
               </div>
             )}
           </button>
@@ -788,9 +936,9 @@ export default function App() {
               ticktickTasks={ticktickTasks}
               ticktickConnected={ticktickConnected}
               ticktickLoading={ticktickLoading}
-              onAddTask={(t) => setTasks(prev => [t, ...prev])}
-              onUpdateTasks={setTasks}
-              onDeleteTask={(id) => setTasks(prev => prev.filter(t => t.id !== id))}
+              onAddTask={handleAddTask}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
               onScheduleTaskOnCalendar={handleScheduleTaskOnCalendar}
               onTriggerNotification={triggerNotification}
               onOpenEmail={handleOpenEmail}

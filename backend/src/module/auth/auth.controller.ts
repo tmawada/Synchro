@@ -10,6 +10,8 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Param,
+  Delete,
   Header,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -140,6 +142,65 @@ export class AuthController {
   async disconnectTickTick(@Req() req: Request) {
     const user = req.user as { id: string };
     return this.authService.disconnectTickTick(user.id);
+  }
+
+  /**
+   * POST /auth/ticktick/tasks
+   * Create a task in the user's TickTick account (protected).
+   * Body: { title, projectId?, priority? (0=none,1=low,3=medium,5=high), dueDate? ('YYYY-MM-DD'), content? }
+   * Returns the created task converted to Synchro format.
+   */
+  @Post('ticktick/tasks')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async createTickTickTask(
+    @Req() req: Request,
+    @Body() body: { title: string; projectId?: string; priority?: number; dueDate?: string; content?: string },
+  ) {
+    if (!body.title || !body.title.trim()) {
+      throw new BadRequestException('Task title is required');
+    }
+    const user = req.user as { id: string };
+    return this.authService.createTickTickTask(user.id, { ...body, title: body.title.trim() });
+  }
+
+  /**
+   * POST /auth/ticktick/task/:taskId?projectId=...
+   * Update a TickTick task (title/priority/dueDate) or mark it complete.
+   * Body: { title?, priority? (0=none,1=low,3=medium,5=high), dueDate? ('YYYY-MM-DD'), completed? }
+   */
+  @Post('ticktick/task/:taskId')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateTickTickTask(
+    @Req() req: Request,
+    @Param('taskId') taskId: string,
+    @Query('projectId') projectId: string,
+    @Body() body: { title?: string; priority?: number; dueDate?: string; completed?: boolean },
+  ) {
+    if (!projectId) {
+      throw new BadRequestException('projectId query parameter is required');
+    }
+    const user = req.user as { id: string };
+    return this.authService.updateTickTickTask(user.id, taskId, projectId, body);
+  }
+
+  /**
+   * DELETE /auth/ticktick/task/:taskId?projectId=...
+   * Delete a TickTick task.
+   */
+  @Delete('ticktick/task/:taskId')
+  @UseGuards(JwtAuthGuard)
+  async deleteTickTickTask(
+    @Req() req: Request,
+    @Param('taskId') taskId: string,
+    @Query('projectId') projectId: string,
+  ) {
+    if (!projectId) {
+      throw new BadRequestException('projectId query parameter is required');
+    }
+    const user = req.user as { id: string };
+    return this.authService.deleteTickTickTask(user.id, taskId, projectId);
   }
 
   /**
