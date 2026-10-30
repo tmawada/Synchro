@@ -1,6 +1,80 @@
 import React, { useState, useMemo } from 'react';
 import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon, EditIcon, CloseIcon } from './Icons';
 
+// TickTick-style priority shortcuts: type "!high", "!medium" or "!low" in the title
+const PRIORITY_SUGGESTIONS = [
+  { token: '!high', priority: 'high', desc: 'Set priority to high' },
+  { token: '!medium', priority: 'medium', desc: 'Set priority to medium' },
+  { token: '!low', priority: 'low', desc: 'Set priority to low' },
+];
+
+// Matches the word currently being typed when it starts with "!"
+const CURRENT_WORD_REGEX = /(^|\s)(!\w*)$/;
+// Matches completed priority tokens anywhere in the input
+const PRIORITY_TOKEN_REGEX = /(^|\s)!(high|medium|low)\b/gi;
+
+// Returns the suggestions for the word currently being typed (or null prefix)
+const getSuggestions = (value) => {
+  const match = value.match(CURRENT_WORD_REGEX);
+  if (!match) return { prefix: null, list: [] };
+  const prefix = match[2];
+  return {
+    prefix,
+    list: PRIORITY_SUGGESTIONS.filter((s) => s.token.startsWith(prefix.toLowerCase())),
+  };
+};
+
+// Replaces the in-progress word with the chosen token (plus a trailing space)
+const applySuggestion = (value, token) =>
+  value.replace(CURRENT_WORD_REGEX, (m, space) => space + token + ' ');
+
+// Extracts !high/!medium/!low tokens from raw input, returning the cleaned title
+// and the last priority token found (or null when none was typed)
+const parsePriorityInput = (raw) => {
+  let priority = null;
+  const title = raw
+    .replace(PRIORITY_TOKEN_REGEX, (match, space, p) => {
+      priority = p.toLowerCase();
+      return space || '';
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { title, priority };
+};
+
+const startOfToday = () => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+// Friendly label for the date chip on the left of each task card
+const formatDueLabel = (dateStr) => {
+  const due = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(due.getTime())) return dateStr;
+  const today = startOfToday();
+  const diff = Math.round((due - today) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  return due.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(due.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  });
+};
+
+// Urgency color for the date chip: red = overdue, amber = due today, muted = upcoming
+const getDueStyle = (task) => {
+  if (task.completed) return { color: 'var(--text-muted)' };
+  const due = new Date(`${task.dueDate}T00:00:00`);
+  if (isNaN(due.getTime())) return { color: 'var(--text-muted)' };
+  const today = startOfToday();
+  if (due < today) return { color: 'var(--danger)' };
+  if (due.getTime() === today.getTime()) return { color: 'var(--warning)' };
+  return { color: 'var(--text-secondary)' };
+};
+
 export default function TasksView({
   tasks,
   ticktickTasks = [],
@@ -36,7 +110,18 @@ export default function TasksView({
   const [editDueDate, setEditDueDate] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Priority-token autocomplete state
+  const [suggestIdx, setSuggestIdx] = useState(0);
+  const [dismissedToken, setDismissedToken] = useState(null);
+
   const isTickTickTask = (task) => task.source === 'ticktick';
+
+  const composerSuggest = getSuggestions(title);
+  const editSuggest = getSuggestions(editTitle);
+  const composerSuggestOpen =
+    composerSuggest.list.length > 0 && composerSuggest.prefix !== dismissedToken;
+  const editSuggestOpen =
+    editSuggest.list.length > 0 && editSuggest.prefix !== dismissedToken;
 
   const handleConnectSubmit = async (e) => {
     e.preventDefault();
@@ -48,14 +133,53 @@ export default function TasksView({
     setTicktickToken('');
   };
 
+  // Keyboard navigation for the "!priority" suggestion dropdown
+  const handleSuggestKeyDown = (e, suggest, onAccept) => {
+    const { prefix, list } = suggest;
+    if (list.length === 0 || prefix === dismissedToken) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSuggestIdx((i) => (Math.min(i, list.length - 1) + 1) % list.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSuggestIdx((i) => (Math.min(i, list.length - 1) - 1 + list.length) % list.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      onAccept(list[Math.min(suggestIdx, list.length - 1)]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setDismissedToken(prefix);
+    }
+  };
+
+  const acceptComposerSuggestion = (s) => {
+    setTitle((v) => applySuggestion(v, s.token));
+    setPriority(s.priority);
+    setSuggestIdx(0);
+    setDismissedToken(null);
+  };
+
+  const acceptEditSuggestion = (s) => {
+    setEditTitle((v) => applySuggestion(v, s.token));
+    setEditPriority(s.priority);
+    setSuggestIdx(0);
+    setDismissedToken(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim()) return;
+
+    // Pull !high/!medium/!low out of the title and apply it as the priority
+    const { title: cleanTitle, priority: typedPriority } = parsePriorityInput(title);
+    if (!cleanTitle) {
+      onTriggerNotification('Task title is required.');
+      return;
+    }
 
     const newTask = {
       id: 'task_' + Date.now(),
-      title,
-      priority,
+      title: cleanTitle,
+      priority: typedPriority || priority,
       listType,
       duration: parseInt(duration),
       dueDate: dueDate || new Date().toISOString().split('T')[0],
@@ -71,6 +195,8 @@ export default function TasksView({
     setListType('work');
     setDuration(60);
     setDueDate('');
+    setSuggestIdx(0);
+    setDismissedToken(null);
     onTriggerNotification(
       ticktickConnected
         ? `Task "${newTask.title}" created in TickTick!`
@@ -85,6 +211,8 @@ export default function TasksView({
     setEditListType(task.listType);
     setEditDuration(task.duration);
     setEditDueDate(task.dueDate);
+    setSuggestIdx(0);
+    setDismissedToken(null);
   };
 
   const closeEdit = () => {
@@ -94,12 +222,19 @@ export default function TasksView({
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
-    if (!editingTask || !editTitle.trim() || isSaving) return;
+    if (!editingTask || isSaving) return;
+
+    // Pull !high/!medium/!low out of the title and apply it as the priority
+    const { title: cleanTitle, priority: typedPriority } = parsePriorityInput(editTitle);
+    if (!cleanTitle) {
+      onTriggerNotification('Task title is required.');
+      return;
+    }
 
     const fromTickTick = isTickTickTask(editingTask);
     const patch = {
-      title: editTitle.trim(),
-      priority: editPriority,
+      title: cleanTitle,
+      priority: typedPriority || editPriority,
       dueDate: editDueDate || editingTask.dueDate,
     };
     // listType/duration only exist in Synchro — TickTick tasks keep their synced values
@@ -288,14 +423,45 @@ export default function TasksView({
         <div style={styles.composerCard} className="glass-panel">
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.composerFirstRow}>
-              <input
-                type="text"
-                required
-                placeholder="What is your next task task?"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                style={styles.taskInput}
-              />
+              <div style={styles.suggestWrapper}>
+                <input
+                  type="text"
+                  required
+                  placeholder="What is your next task? Type ! for priority"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onKeyDown={(e) => handleSuggestKeyDown(e, composerSuggest, acceptComposerSuggestion)}
+                  style={styles.taskInput}
+                />
+                {composerSuggestOpen && (
+                  <div style={styles.suggestDropdown} className="glass-panel">
+                    <div style={styles.suggestHint}>Priority shortcuts</div>
+                    {composerSuggest.list.map((s, i) => {
+                      const activeIdx = Math.min(suggestIdx, composerSuggest.list.length - 1);
+                      return (
+                        <button
+                          key={s.token}
+                          type="button"
+                          style={{
+                            ...styles.suggestItem,
+                            ...(i === activeIdx ? styles.suggestItemActive : {}),
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault(); // keep focus in the input
+                            acceptComposerSuggestion(s);
+                          }}
+                          onMouseEnter={() => setSuggestIdx(i)}
+                        >
+                          <span style={{ ...styles.suggestToken, color: getPriorityStyle(s.priority).color }}>
+                            {s.token}
+                          </span>
+                          <span style={styles.suggestDesc}>{s.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <button type="submit" style={styles.addTaskBtn}>
                 <PlusIcon size={16} style={{ marginRight: '6px' }} />
                 {ticktickConnected ? 'Add to TickTick' : 'Add Task'}
@@ -374,7 +540,17 @@ export default function TasksView({
               filteredTasks.map((task) => {
                 const prio = getPriorityStyle(task.priority);
                 return (
-                  <div key={task.id} style={styles.taskCard} className="glass-panel">
+                  <div
+                    key={task.id}
+                    style={styles.taskCard}
+                    className="glass-panel task-card-clickable"
+                    title="Click anywhere to edit"
+                    onClick={(e) => {
+                      // Buttons (checkbox, block time, delete, mail link) handle themselves
+                      if (e.target.closest('button')) return;
+                      openEdit(task);
+                    }}
+                  >
                     <button 
                       style={styles.checkboxBtn} 
                       onClick={() => toggleTaskCompleted(task)}
@@ -389,6 +565,10 @@ export default function TasksView({
                       </div>
                     </button>
 
+                    <span style={{ ...styles.dueDateChip, ...getDueStyle(task) }}>
+                      {formatDueLabel(task.dueDate)}
+                    </span>
+
                     <div style={styles.taskContent}>
                       <span style={{
                         ...styles.taskTitle,
@@ -401,9 +581,6 @@ export default function TasksView({
                       <div style={styles.taskDetails}>
                         <span style={{ ...styles.prioTag, color: prio.color, backgroundColor: prio.bg }}>
                           {task.priority}
-                        </span>
-                        <span style={styles.detailText}>
-                          Due: {task.dueDate}
                         </span>
                         <span style={styles.detailText}>
                           Est: {task.duration} mins
@@ -441,14 +618,6 @@ export default function TasksView({
                           Block Time
                         </button>
                       )}
-                      <button
-                        style={styles.editBtn}
-                        className="glass-panel-interactive"
-                        onClick={() => openEdit(task)}
-                        title="Edit Task"
-                      >
-                        <EditIcon size={14} />
-                      </button>
                       <button
                         style={styles.deleteBtn}
                         onClick={() => onDeleteTask(task)}
@@ -489,14 +658,45 @@ export default function TasksView({
             <form onSubmit={handleEditSubmit} style={styles.editForm}>
               <div style={styles.editField}>
                 <span style={styles.settingLabel}>Title:</span>
-                <input
-                  type="text"
-                  required
-                  autoFocus
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  style={styles.editInput}
-                />
+                <div style={styles.suggestWrapper}>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => handleSuggestKeyDown(e, editSuggest, acceptEditSuggestion)}
+                    style={styles.editInput}
+                  />
+                  {editSuggestOpen && (
+                    <div style={styles.suggestDropdown} className="glass-panel">
+                      <div style={styles.suggestHint}>Priority shortcuts</div>
+                      {editSuggest.list.map((s, i) => {
+                        const activeIdx = Math.min(suggestIdx, editSuggest.list.length - 1);
+                        return (
+                          <button
+                            key={s.token}
+                            type="button"
+                            style={{
+                              ...styles.suggestItem,
+                              ...(i === activeIdx ? styles.suggestItemActive : {}),
+                            }}
+                            onMouseDown={(e) => {
+                              e.preventDefault(); // keep focus in the input
+                              acceptEditSuggestion(s);
+                            }}
+                            onMouseEnter={() => setSuggestIdx(i)}
+                          >
+                            <span style={{ ...styles.suggestToken, color: getPriorityStyle(s.priority).color }}>
+                              {s.token}
+                            </span>
+                            <span style={styles.suggestDesc}>{s.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={styles.editField}>
@@ -707,7 +907,8 @@ const styles = {
     gap: '12px',
   },
   taskInput: {
-    flexGrow: 1,
+    width: '100%',
+    boxSizing: 'border-box',
     padding: '10px 14px',
     borderRadius: '8px',
     backgroundColor: 'rgba(0,0,0,0.25)',
@@ -790,6 +991,13 @@ const styles = {
     padding: '16px',
     gap: '16px',
   },
+  dueDateChip: {
+    fontSize: '11.5px',
+    fontWeight: '600',
+    minWidth: '62px',
+    flexShrink: 0,
+    textAlign: 'left',
+  },
   checkboxBtn: {
     display: 'flex',
     alignItems: 'center',
@@ -867,19 +1075,6 @@ const styles = {
       backgroundColor: 'rgba(239,68,68,0.05)',
     }
   },
-  editBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '6px',
-    borderRadius: '6px',
-    color: 'var(--text-muted)',
-    transition: 'color 0.2s, background-color 0.2s',
-    ':hover': {
-      color: 'var(--primary)',
-      backgroundColor: 'rgba(139, 92, 246, 0.08)',
-    }
-  },
   closeModalBtn: {
     display: 'flex',
     alignItems: 'center',
@@ -904,13 +1099,63 @@ const styles = {
     gap: '10px',
   },
   editInput: {
-    flexGrow: 1,
+    width: '100%',
+    boxSizing: 'border-box',
     padding: '9px 12px',
     borderRadius: '8px',
     backgroundColor: 'rgba(0,0,0,0.2)',
     border: '1px solid var(--border-color)',
     fontSize: '13px',
     color: 'var(--text-primary)',
+  },
+  suggestWrapper: {
+    position: 'relative',
+    flexGrow: 1,
+    minWidth: 0,
+  },
+  suggestDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 6px)',
+    left: 0,
+    minWidth: '240px',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    boxShadow: '0 14px 34px rgba(0,0,0,0.45)',
+    zIndex: 60,
+  },
+  suggestHint: {
+    fontSize: '9.5px',
+    fontWeight: '700',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    color: 'var(--text-muted)',
+    padding: '6px 10px 4px',
+  },
+  suggestItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    width: '100%',
+    padding: '8px 10px',
+    borderRadius: '6px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  suggestItemActive: {
+    backgroundColor: 'var(--primary-glow)',
+  },
+  suggestToken: {
+    fontSize: '12.5px',
+    fontWeight: '700',
+    fontFamily: 'monospace',
+  },
+  suggestDesc: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
   },
   cancelEditBtn: {
     flex: 1,
