@@ -3,7 +3,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { TickTickService } from '../ticktick/ticktick.service';
 
 interface GoogleProfile {
   googleId: string;
@@ -16,15 +15,11 @@ interface GoogleProfile {
 
 @Injectable()
 export class AuthService {
-  private tickTickService: TickTickService;
-
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {
-    this.tickTickService = new TickTickService(configService);
-  }
+  ) {}
 
   /**
    * Register a new user with email + password.
@@ -314,10 +309,15 @@ export class AuthService {
 
   /**
    * Fetch emails from the authenticated user's Google account via Gmail REST API.
-   * Uses Gmail's batch API to fetch multiple emails efficiently.
+   * Gmail list results use cursor-based pagination (pageToken), so we walk the
+   * list pages until we reach the requested page number, then fetch details
+   * only for that page's messages.
+   * `search` (optional) runs server-side via Gmail's native `subject:` query
+   * operator, so results are searched across the whole mailbox, not just the
+   * currently loaded page.
    * Includes rate limiting to stay under Google API quotas.
    */
-  async getGoogleEmails(userId: string, limit = 10, page = 1) {
+  async getGoogleEmails(userId: string, limit = 10, page = 1, search?: string) {
     const account = await this.prisma.account.findFirst({
       where: { userId, provider: 'google' },
     });
@@ -334,123 +334,144 @@ export class AuthService {
     if (!token) return { emails: [], totalPages: 0, page: 1 };
 
     try {
-      // Reduce limit to minimize API calls
-      const fetchLimit = Math.min(limit, 10);
+      const fetchLimit = Math.min(Math.max(limit, 1), 50);
+      const targetPage = Math.max(page, 1);
 
-      // Rate limiting delay
+      // Initial delay for rate limiting
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // Fetch message list
-      const listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${fetchLimit}`;
-      let listRes = await fetch(listUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Server-side subject search using Gmail's native `subject:` operator
+      // (case-insensitive, quoted phrase). Escape backslashes/quotes first.
+      const qParam = search
+        ? `subject:"${search.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+        : '';
 
-      if (listRes.status === 401 && account.refreshToken) {
-        token = await this.refreshGoogleToken(account);
-        if (token) {
-          listRes = await fetch(listUrl, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+      const listUrlFor = (pageToken?: string) => {
+        const params = new URLSearchParams({ maxResults: String(fetchLimit) });
+        if (pageToken) params.set('pageToken', pageToken);
+        if (qParam) params.set('q', qParam);
+        return `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`;
+      };
+
+      // Fetch helper: retries once with a refreshed token on 401
+      const googleFetch = async (url: string) => {
+        let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.status === 401 && account.refreshToken) {
+          token = await this.refreshGoogleToken(account);
+          if (!token) return null;
+          res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         }
-      }
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => '');
+          console.warn(`Gmail API request failed (${res.status}):`, errorText);
+          return null;
+        }
+        return res;
+      };
 
-      if (!listRes.ok) {
-        const errorText = await listRes.text();
-        console.error('Failed to fetch Gmail list:', errorText);
-        return { emails: [], totalPages: 0, page: 1 };
-      }
+      // Walk Gmail's pageToken cursor until the requested page
+      let listRes = await googleFetch(listUrlFor());
+      if (!listRes) return { emails: [], totalPages: 0, page: 1 };
 
-      const listData = (await listRes.json()) as {
+      let listData = (await listRes.json()) as {
         messages?: { id: string }[];
         resultSizeEstimate?: number;
         nextPageToken?: string;
       };
 
-      if (!listData.messages || listData.messages.length === 0) {
-        return { emails: [], totalPages: 0, page: 1 };
+      let currentPage = 1;
+      while (currentPage < targetPage && listData?.nextPageToken && listData.messages?.length) {
+        // Brief pause between list requests to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 150));
+        const res = await googleFetch(listUrlFor(listData.nextPageToken));
+        if (!res) break;
+        listData = (await res.json()) as typeof listData;
+        currentPage++;
       }
 
-      const totalMessages = listData.resultSizeEstimate || fetchLimit;
-      const totalPages = Math.max(1, Math.ceil(totalMessages / fetchLimit));
+      const messages = listData?.messages || [];
+      if (messages.length === 0) {
+        // Requested page is past the end of the mailbox
+        return { emails: [], totalPages: 1, page: targetPage };
+      }
 
-      // Use batch request to fetch all message details at once
-      // This reduces the number of API calls from N to 1
+      const totalPages = Math.max(
+        1,
+        Math.ceil((listData.resultSizeEstimate || messages.length) / fetchLimit),
+      );
+
+      // Fetch message details in parallel batches to reduce wall time
       const emails: any[] = [];
+      const BATCH_SIZE = 10;
 
-      // Fetch details one at a time with delays to avoid rate limits
-      for (let i = 0; i < listData.messages.length; i++) {
-        const msg = listData.messages[i];
-
-        // Add delay between fetches (except first one)
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        try {
-          const detailRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            },
-          );
-
-          if (!detailRes.ok) {
-            console.warn(`Failed to fetch email ${msg.id}`);
-            continue;
-          }
-
-          const data = (await detailRes.json()) as any;
-          const headers = data.payload?.headers || [];
-          const getHeader = (name: string) =>
-            headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
-
-          const rawFrom = getHeader('From');
-          let senderName = rawFrom;
-          let senderEmail = rawFrom;
-          if (rawFrom.includes('<')) {
-            const parts = rawFrom.split('<');
-            senderName = parts[0].trim().replace(/^"|"$/g, '');
-            senderEmail = parts[1].replace('>', '').trim();
-          }
-
-          const dateHeader = getHeader('Date');
-          let formattedDate = 'Recently';
-          if (dateHeader) {
+      for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+        const batch = messages.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(
+          batch.map(async (msg) => {
             try {
-              const d = new Date(dateHeader);
-              formattedDate = d.toLocaleDateString([], {
-                month: 'short',
-                day: 'numeric',
-              });
-            } catch {}
-          }
+              const detailRes = await googleFetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
+              );
+              if (!detailRes) return null;
 
-          emails.push({
-            id: `gmail_${data.id}`,
-            subject: getHeader('Subject') || '(No Subject)',
-            sender: senderEmail,
-            senderName: senderName || senderEmail,
-            to: getHeader('To') || 'me',
-            account: account.providerAccountId || 'google',
-            body: data.snippet || '(No preview available)',
-            folder: 'inbox',
-            date: formattedDate,
-            isRead: !data.labelIds?.includes('UNREAD'),
-            isStarred: data.labelIds?.includes('STARRED') || false,
-            attachments: [],
-            replies: [],
-          });
-        } catch (error) {
-          console.warn('Failed to fetch email details:', error);
-          continue;
+              const data = (await detailRes.json()) as any;
+              const headers = data.payload?.headers || [];
+              const getHeader = (name: string) =>
+                headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+              const rawFrom = getHeader('From');
+              let senderName = rawFrom;
+              let senderEmail = rawFrom;
+              if (rawFrom.includes('<')) {
+                const parts = rawFrom.split('<');
+                senderName = parts[0].trim().replace(/^"|"$/g, '');
+                senderEmail = parts[1].replace('>', '').trim();
+              }
+
+              const dateHeader = getHeader('Date');
+              let formattedDate = 'Recently';
+              if (dateHeader) {
+                try {
+                  const d = new Date(dateHeader);
+                  formattedDate = d.toLocaleDateString([], {
+                    month: 'short',
+                    day: 'numeric',
+                  });
+                } catch {}
+              }
+
+              return {
+                id: `gmail_${data.id}`,
+                subject: getHeader('Subject') || '(No Subject)',
+                sender: senderEmail,
+                senderName: senderName || senderEmail,
+                to: getHeader('To') || 'me',
+                account: account.providerAccountId || 'google',
+                body: data.snippet || '(No preview available)',
+                folder: 'inbox',
+                date: formattedDate,
+                isRead: !data.labelIds?.includes('UNREAD'),
+                isStarred: data.labelIds?.includes('STARRED') || false,
+                attachments: [],
+                replies: [],
+              };
+            } catch (error) {
+              console.warn('Failed to fetch email details:', error);
+              return null;
+            }
+          }),
+        );
+        emails.push(...results.filter((e) => e !== null));
+        // Brief pause between detail batches to avoid rate limits
+        if (i + BATCH_SIZE < messages.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
       return {
-        emails: emails,
-        totalPages: totalPages,
-        page: page
+        emails,
+        totalPages,
+        page: targetPage,
       };
     } catch (error) {
       console.error('Error fetching Google emails:', error);
@@ -458,183 +479,4 @@ export class AuthService {
     }
   }
 
-  /**
-   * Get TickTick tasks for the authenticated user.
-   * Fetches from TickTick API using stored access token.
-   */
-  async getTickTickTasks(userId: string) {
-    // Find TickTick account for this user
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (!ticktickAccount || !ticktickAccount.ticktickAccessToken) {
-      return { tasks: [], projects: [], connected: false };
-    }
-
-    try {
-      const response = await this.tickTickService.getTasks(ticktickAccount.ticktickAccessToken);
-
-      // Convert to Synchro format
-      const synchroTasks = response.tasks.map((task) =>
-        this.tickTickService.convertToSynchroTask(task, response.projects)
-      );
-
-      return {
-        tasks: synchroTasks,
-        projects: response.projects,
-        connected: true,
-      };
-    } catch (error) {
-      console.error('[AuthService] Failed to fetch TickTick tasks:', error);
-      // If token is expired or invalid, return disconnected
-      return { tasks: [], projects: [], connected: false, error: error.message };
-    }
-  }
-
-  /**
-   * Store or update TickTick token for a user.
-   * Called when user connects TickTick account.
-   */
-  async setTickTickToken(userId: string, accessToken: string, refreshToken?: string, ticktickId?: string) {
-    // First, check if a ticktick account already exists
-    const existingAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (existingAccount) {
-      return this.prisma.account.update({
-        where: { id: existingAccount.id },
-        data: {
-          ticktickAccessToken: accessToken,
-          ticktickRefreshToken: refreshToken || existingAccount.ticktickRefreshToken,
-          ticktickId: ticktickId || existingAccount.ticktickId,
-          ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days default
-        },
-      });
-    }
-
-    // Create new TickTick account entry
-    return this.prisma.account.create({
-      data: {
-        provider: 'ticktick',
-        providerAccountId: ticktickId || `ticktick_${userId}`,
-        ticktickAccessToken: accessToken,
-        ticktickRefreshToken: refreshToken,
-        ticktickId: ticktickId,
-        ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
-        userId,
-      },
-    });
-  }
-
-  /**
-   * Disconnect TickTick account (remove tokens)
-   */
-  async disconnectTickTick(userId: string) {
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (ticktickAccount) {
-      await this.prisma.account.delete({
-        where: { id: ticktickAccount.id },
-      });
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Create a task in the user's TickTick account.
-   * Returns the created task converted to Synchro format.
-   */
-  async createTickTickTask(
-    userId: string,
-    body: { title: string; projectId?: string; priority?: number; dueDate?: string; content?: string },
-  ) {
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (!ticktickAccount?.ticktickAccessToken) {
-      throw new BadRequestException('TickTick is not connected.');
-    }
-
-    const token = ticktickAccount.ticktickAccessToken;
-    const created = await this.tickTickService.createTask(token, body);
-
-    // Projects are needed to derive projectName/listType for the Synchro shape
-    const projects = await this.tickTickService.getProjects(token);
-
-    return {
-      success: true,
-      task: this.tickTickService.convertToSynchroTask(created, projects),
-    };
-  }
-
-  /**
-   * Update a TickTick task (title/priority/dueDate) or mark it complete.
-   */
-  async updateTickTickTask(
-    userId: string,
-    taskId: string,
-    projectId: string,
-    body: { title?: string; priority?: number; dueDate?: string | null; completed?: boolean },
-  ) {
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (!ticktickAccount?.ticktickAccessToken) {
-      throw new BadRequestException('TickTick is not connected.');
-    }
-
-    const token = ticktickAccount.ticktickAccessToken;
-
-    if (body.completed === true) {
-      await this.tickTickService.completeTask(token, projectId, taskId);
-      return { success: true };
-    }
-
-    const patch: { title?: string; priority?: number; dueDate?: string | null; status?: number } = {};
-    if (body.title !== undefined) patch.title = body.title;
-    if (body.priority !== undefined) patch.priority = body.priority;
-    // An empty/null due date clears the date on TickTick
-    if (body.dueDate !== undefined) patch.dueDate = body.dueDate;
-    if (body.completed === false) patch.status = 0;
-
-    if (Object.keys(patch).length > 0) {
-      await this.tickTickService.updateTask(token, projectId, taskId, patch);
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Delete a TickTick task.
-   */
-  async deleteTickTickTask(userId: string, taskId: string, projectId: string) {
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
-
-    if (!ticktickAccount?.ticktickAccessToken) {
-      throw new BadRequestException('TickTick is not connected.');
-    }
-
-    await this.tickTickService.deleteTask(ticktickAccount.ticktickAccessToken, projectId, taskId);
-    return { success: true };
-  }
-
-  /**
-   * Check if user has TickTick connected
-   */
-  async isTickTickConnected(userId: string): Promise<boolean> {
-    const account = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-      select: { ticktickAccessToken: true },
-    });
-    return !!account?.ticktickAccessToken;
-  }
 }

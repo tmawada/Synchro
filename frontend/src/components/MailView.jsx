@@ -26,6 +26,8 @@ export default function MailView({
   setActiveAccountFilter,
   onTriggerNotification,
   onOpenCompose,
+  searchQuery = '',
+  onSearchChange,
   currentPage = 1,
   totalPages = 1,
   onPageChange,
@@ -33,7 +35,6 @@ export default function MailView({
 }) {
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
   const [selectedEmailId, setSelectedEmailId] = useState(emails.length > 0 ? emails[0].id : null);
-  const [searchQuery, setSearchQuery] = useState('');
   const [replyBody, setReplyBody] = useState('');
 
   // Static list pane width
@@ -109,15 +110,8 @@ export default function MailView({
       if (!account || account.id !== activeAccountFilter) return false;
     }
 
-    // Search query filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        mail.subject.toLowerCase().includes(query) ||
-        mail.sender.toLowerCase().includes(query) ||
-        mail.body.toLowerCase().includes(query)
-      );
-    }
+    // Note: search is done server-side (Gmail's subject: search via the API's
+    // `q` parameter), so no client-side query filter here.
 
     return true;
   });
@@ -208,9 +202,9 @@ export default function MailView({
           <SearchIcon size={16} style={styles.searchIcon} />
           <input
             type="text"
-            placeholder="Search email thread..."
+            placeholder="Search email subject..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
             style={styles.searchInput}
           />
         </div>

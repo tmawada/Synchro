@@ -316,6 +316,53 @@ export default function TasksView({
     }
   };
 
+  // Dates come first, priority breaks ties, title keeps it stable
+  const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+  const sortByDateThenPriority = (list) =>
+    [...list].sort((a, b) => {
+      if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) {
+        return a.dueDate < b.dueDate ? -1 : 1;
+      }
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+      const pa = PRIORITY_RANK[a.priority] ?? 3;
+      const pb = PRIORITY_RANK[b.priority] ?? 3;
+      if (pa !== pb) return pa - pb;
+      return a.title.localeCompare(b.title);
+    });
+
+  // Bucket a task by how far its due date is from today
+  // (overdue tasks stay in "Today" — they're the most urgent)
+  const getDueBucket = (task) => {
+    if (!task.dueDate) return 'nodate';
+    const due = new Date(`${task.dueDate}T00:00:00`);
+    if (isNaN(due.getTime())) return 'nodate';
+    const diff = Math.round((due - startOfToday()) / 86400000);
+    if (diff <= 0) return 'today';
+    if (diff <= 5) return 'soon';
+    return 'later';
+  };
+
+  const TASK_SECTIONS = [
+    { key: 'today', label: 'Today' },
+    { key: 'soon', label: 'Next 5 Days' },
+    { key: 'later', label: 'Later' },
+    { key: 'nodate', label: 'No Date' },
+  ];
+
+  // Completed archives stay a flat, date-sorted list; other views get sections
+  const groupedTasks = useMemo(() => {
+    if (selectedFilter === 'completed') {
+      return [{ key: 'completed', label: null, tasks: sortByDateThenPriority(filteredTasks) }];
+    }
+    return TASK_SECTIONS
+      .map((section) => ({
+        ...section,
+        tasks: sortByDateThenPriority(filteredTasks.filter((t) => getDueBucket(t) === section.key)),
+      }))
+      .filter((section) => section.tasks.length > 0);
+  }, [filteredTasks, selectedFilter]);
+
   const getCount = (filter) => {
     return allTasks.filter((t) => {
       if (filter === 'today') {
@@ -400,15 +447,24 @@ export default function TasksView({
         {/* TickTick Integration */}
         {ticktickConnected && !ticktickLoading ? (
           <div style={styles.ticktickConnected}>
-            <span style={{ ...styles.prioTag, color: 'var(--text-primary)', fontSize: '11px', padding: '2px 6px', borderRadius: '6px', marginRight: '8px' }}>
-              <LinkIcon size={12} style={{ marginRight: '4px' }} /> Connected
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
+              <span style={{ ...styles.prioTag, color: 'var(--text-primary)', fontSize: '11px', padding: '2px 6px', borderRadius: '6px' }}>
+                <LinkIcon size={12} style={{ marginRight: '4px' }} /> Connected
+              </span>
+              <button
+                style={styles.refreshBtn}
+                onClick={onRefreshTickTick}
+                title="Refresh TickTick tasks"
+              >
+                <RefreshIcon size={14} />
+              </button>
+            </div>
             <button
-              style={{ ...styles.scheduleBlockBtn, padding: '4px 8px', fontSize: '10px', marginLeft: '8px', backgroundColor: 'rgba(255,255,255,0.02)' }}
+              style={styles.disconnectBtn}
               onClick={onDisconnectTickTick}
               title="Disconnect TickTick"
             >
-              <TrashIcon size={12} /> Disconnect
+              <TrashIcon size={12} style={{ marginRight: '6px' }} /> Disconnect Account
             </button>
           </div>
         ) : (
@@ -553,7 +609,15 @@ export default function TasksView({
                 <p>All clean! No tasks found in this view.</p>
               </div>
             ) : (
-              filteredTasks.map((task) => {
+              groupedTasks.map((section) => (
+                <div key={section.key} style={styles.taskSection}>
+                  {section.label && (
+                    <div style={styles.sectionHeader}>
+                      <span style={styles.sectionLabel}>{section.label}</span>
+                      <span style={styles.countBadge}>{section.tasks.length}</span>
+                    </div>
+                  )}
+                  {section.tasks.map((task) => {
                 const prio = getPriorityStyle(task.priority);
                 return (
                   <div
@@ -662,7 +726,7 @@ export default function TasksView({
                               }}
                             >
                               <EditIcon size={14} />
-                              Edit
+                              {task.completed ? 'View' : 'Edit'}
                             </button>
                             <button
                               className="task-menu-item task-menu-item-danger"
@@ -680,7 +744,9 @@ export default function TasksView({
                     </div>
                   </div>
                 );
-              })
+                  })}
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -1030,7 +1096,26 @@ const styles = {
   taskList: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '20px',
+  },
+  taskSection: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '10px',
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    paddingBottom: '6px',
+    borderBottom: '1px solid var(--border-color)',
+  },
+  sectionLabel: {
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    color: 'var(--text-muted)',
   },
   emptyState: {
     padding: '60px 40px',
@@ -1248,9 +1333,44 @@ const styles = {
   },
   ticktickConnected: {
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
     marginTop: '12px',
     paddingTop: '12px',
     borderTop: '1px solid var(--border-color)',
+    gap: '4px',
+  },
+  refreshBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6px',
+    borderRadius: '6px',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    color: 'var(--text-secondary)',
+    transition: 'all 0.2s',
+    border: 'none',
+    cursor: 'pointer',
+    ':hover': {
+      backgroundColor: 'rgba(255,255,255,0.08)',
+      color: 'var(--text-primary)',
+    }
+  },
+  disconnectBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    padding: '8px',
+    borderRadius: '6px',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    color: 'var(--danger)',
+    fontSize: '11px',
+    fontWeight: '600',
+    transition: 'all 0.2s',
+    border: 'none',
+    cursor: 'pointer',
+    ':hover': {
+      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    }
   }
 };

@@ -4,14 +4,16 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './module/prisma/prisma.module';
 import { AuthModule } from './module/auth/auth.module';
+import { TickTickModule } from './module/ticktick/ticktick.module';
 
 @Module({
-  // Buat module terpisah perfunction dan regis ke imports 
+  // Buat module terpisah perfunction dan regis ke imports
   imports: [
     // expandVariables lets .env values reference other vars, e.g. API="http://...:3030" → GOOGLE_CALLBACK_URL="${API}/auth/google/callback"
     ConfigModule.forRoot({ isGlobal: true, expandVariables: true }),
     PrismaModule,
     AuthModule,
+    TickTickModule,
   ],
   controllers: [AppController],
   providers: [AppService],

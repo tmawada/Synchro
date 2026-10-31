@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface TickTickTask {
   id: string;
@@ -47,80 +48,26 @@ export interface TickTickTasksResponse {
 export class TickTickService {
   private readonly baseUrl = 'https://api.ticktick.com/open/v1';
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {}
 
   /**
-   * Get all tasks from TickTick Open API v1 (personal access token)
-   * The Open API has no batch "get all tasks" endpoint, so we fetch
-   * every project's tasks via GET /project/{id}/data, plus the inbox
-   * via GET /project/inbox/data (inbox is never listed in /project).
+   * Get the stored TickTick access token for a user.
    */
-  async getTasks(accessToken: string): Promise<TickTickTasksResponse> {
-    try {
-      const projects = await this.getProjects(accessToken);
-      const headers = {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      };
+  async getAccessToken(userId: string): Promise<string | null> {
+    const account = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+    return account?.ticktickAccessToken || null;
+  }
 
-      const tasks: TickTickTask[] = [];
-
-      for (const project of projects) {
-        try {
-          const response = await fetch(`${this.baseUrl}/project/${project.id}/data`, { headers });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error(
-              `[TickTick] Failed to fetch tasks for project ${project.id}:`,
-              response.status,
-              errorText,
-            );
-            continue;
-          }
-
-          const data = (await response.json()) as { tasks?: TickTickTask[] };
-          if (Array.isArray(data.tasks)) {
-            tasks.push(...data.tasks);
-          }
-        } catch (error) {
-          console.error(`[TickTick] Error fetching project ${project.id}:`, error);
-        }
-      }
-
-      // Inbox: returned by a dedicated endpoint, with no "project" field,
-      // so discover the real inbox id from a returned task's projectId
-      const inboxResponse = await fetch(`${this.baseUrl}/project/inbox/data`, { headers });
-      if (inboxResponse.ok) {
-        const inboxData = (await inboxResponse.json()) as { tasks?: TickTickTask[] };
-        if (Array.isArray(inboxData.tasks) && inboxData.tasks.length > 0) {
-          tasks.push(...inboxData.tasks);
-
-          const inboxId = inboxData.tasks[0].projectId;
-          if (!projects.some((p) => p.id === inboxId)) {
-            projects.push({
-              id: inboxId,
-              name: 'Inbox',
-              color: '',
-              sortOrder: 0,
-              kind: 'TASK',
-              closed: false,
-              viewMode: 'list',
-              createdTime: '',
-              modifiedTime: '',
-            });
-          }
-        }
-      } else {
-        const errorText = await inboxResponse.text();
-        console.error('[TickTick] Failed to fetch inbox tasks:', inboxResponse.status, errorText);
-      }
-
-      return { tasks, projects };
-    } catch (error) {
-      console.error('[TickTick] Error fetching tasks:', error);
-      throw error;
-    }
+  private headers(accessToken: string) {
+    return {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    };
   }
 
   /**
@@ -129,10 +76,7 @@ export class TickTickService {
   async getProjects(accessToken: string): Promise<TickTickProject[]> {
     try {
       const response = await fetch(`${this.baseUrl}/project`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: this.headers(accessToken),
       });
 
       if (!response.ok) {
@@ -147,6 +91,168 @@ export class TickTickService {
       console.error('[TickTick] Error fetching projects:', error);
       return [];
     }
+  }
+
+  /**
+   * Get the Inbox project (the inbox is never listed in /project).
+   * Returns the project object plus its active tasks.
+   */
+  async getInbox(accessToken: string): Promise<{ project: TickTickProject | null; tasks: TickTickTask[] }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/project/inbox/data`, {
+        headers: this.headers(accessToken),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[TickTick] Failed to fetch inbox:', response.status, errorText);
+        return { project: null, tasks: [] };
+      }
+
+      const data = (await response.json()) as {
+        project?: TickTickProject;
+        tasks?: TickTickTask[];
+      };
+
+      // Fallback: some responses omit the project object — derive the id from a task
+      let project = data.project || null;
+      if (!project && Array.isArray(data.tasks) && data.tasks.length > 0) {
+        project = {
+          id: data.tasks[0].projectId,
+          name: 'Inbox',
+          color: '',
+          sortOrder: 0,
+          kind: 'TASK',
+          closed: false,
+          viewMode: 'list',
+          createdTime: '',
+          modifiedTime: '',
+        };
+      }
+
+      return { project, tasks: Array.isArray(data.tasks) ? data.tasks : [] };
+    } catch (error) {
+      console.error('[TickTick] Error fetching inbox:', error);
+      return { project: null, tasks: [] };
+    }
+  }
+
+  /**
+   * Get active tasks from a single project.
+   */
+  private async getProjectTasks(accessToken: string, projectId: string): Promise<TickTickTask[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/project/${projectId}/data`, {
+        headers: this.headers(accessToken),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[TickTick] Failed to fetch tasks for project ${projectId}:`, response.status, errorText);
+        return [];
+      }
+
+      const data = (await response.json()) as { tasks?: TickTickTask[] };
+      return Array.isArray(data.tasks) ? data.tasks : [];
+    } catch (error) {
+      console.error(`[TickTick] Error fetching tasks for project ${projectId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get completed tasks across ALL projects (including the Inbox) via the
+   * global POST /task/completed endpoint. TickTick limits the date range,
+   * so we query the last 90 days in TickTick's timestamp format
+   * (YYYY-MM-DDTHH:mm:ss+0000, no milliseconds).
+   */
+  async getCompletedTasks(accessToken: string): Promise<TickTickTask[]> {
+    try {
+      const now = new Date();
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const formatDate = (d: Date) => d.toISOString().split('.')[0] + '+0000';
+
+      const response = await fetch(`${this.baseUrl}/task/completed`, {
+        method: 'POST',
+        headers: this.headers(accessToken),
+        body: JSON.stringify({
+          startDate: formatDate(ninetyDaysAgo),
+          endDate: formatDate(tomorrow),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[TickTick] Failed to fetch completed tasks:', response.status, errorText);
+        return [];
+      }
+
+      const data = await response.json();
+      // The endpoint returns a raw array of completed tasks
+      const completedTasks = Array.isArray(data) ? data : (data.tasks || []);
+      // Ensure status is 2 so the frontend's completed filter picks them up
+      return (Array.isArray(completedTasks) ? completedTasks : []).map((t: TickTickTask) => ({
+        ...t,
+        status: 2,
+      }));
+    } catch (error) {
+      console.error('[TickTick] Error fetching completed tasks:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get ALL active tasks: every project's tasks + inbox.
+   * Completed tasks are excluded — they come from getCompletedOnly()
+   * (dedicated GET /ticktick/completed endpoint).
+   */
+  async getTasks(accessToken: string): Promise<TickTickTasksResponse> {
+    const projects = await this.getProjects(accessToken);
+    const taskMap = new Map<string, TickTickTask>();
+    const projectIds = new Set(projects.map((p) => p.id));
+
+    // Inbox first — its id is needed to avoid double-fetching in the loop below
+    const inbox = await this.getInbox(accessToken);
+    if (inbox.project && !projectIds.has(inbox.project.id)) {
+      projects.push(inbox.project);
+      projectIds.add(inbox.project.id);
+    }
+    inbox.tasks.forEach((t) => taskMap.set(t.id, t));
+
+    for (const project of projects) {
+      if (inbox.project && project.id === inbox.project.id) continue;
+      const tasks = await this.getProjectTasks(accessToken, project.id);
+      tasks.forEach((t) => taskMap.set(t.id, t));
+    }
+
+    // Exclude completed — the frontend merges in GET /ticktick/completed separately
+    const tasks = Array.from(taskMap.values()).filter((t) => t.status !== 2);
+    return { tasks, projects };
+  }
+
+  /**
+   * Get ONLY inbox tasks (active), with the inbox project attached.
+   */
+  async getInboxTasks(accessToken: string): Promise<TickTickTasksResponse> {
+    const inbox = await this.getInbox(accessToken);
+    const projects: TickTickProject[] = inbox.project ? [inbox.project] : [];
+    return { tasks: inbox.tasks, projects };
+  }
+
+  /**
+   * Get ONLY completed tasks across all projects.
+   * Projects are included so the converter can resolve project names.
+   */
+  async getCompletedOnly(accessToken: string): Promise<TickTickTasksResponse> {
+    const projects = await this.getProjects(accessToken);
+    const inbox = await this.getInbox(accessToken);
+    if (inbox.project && !projects.some((p) => p.id === inbox.project!.id)) {
+      projects.push(inbox.project);
+    }
+
+    const tasks = await this.getCompletedTasks(accessToken);
+    return { tasks, projects };
   }
 
   /**
@@ -174,10 +280,7 @@ export class TickTickService {
     try {
       const response = await fetch(`${this.baseUrl}/task`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: this.headers(accessToken),
         body: JSON.stringify(payload),
       });
 
@@ -223,10 +326,7 @@ export class TickTickService {
     try {
       const response = await fetch(`${this.baseUrl}/task/${taskId}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: this.headers(accessToken),
         body: JSON.stringify(payload),
       });
 
@@ -252,10 +352,7 @@ export class TickTickService {
         `${this.baseUrl}/project/${projectId}/task/${taskId}/complete`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
+          headers: this.headers(accessToken),
         },
       );
 
@@ -272,6 +369,15 @@ export class TickTickService {
   }
 
   /**
+   * Mark a task as incomplete on TickTick (moves it back to the active list).
+   * The Open API has no uncomplete endpoint — updating the task with
+   * status 0 does the job.
+   */
+  async uncompleteTask(accessToken: string, projectId: string, taskId: string): Promise<boolean> {
+    return this.updateTask(accessToken, projectId, taskId, { status: 0 });
+  }
+
+  /**
    * Delete a task on TickTick.
    * Open API: DELETE /project/{projectId}/task/{taskId}
    */
@@ -281,9 +387,7 @@ export class TickTickService {
         `${this.baseUrl}/project/${projectId}/task/${taskId}`,
         {
           method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: { Authorization: `Bearer ${accessToken}` },
         },
       );
 
@@ -364,5 +468,68 @@ export class TickTickService {
       projectId: ticktickTask.projectId,
       projectName,
     };
+  }
+
+  /**
+   * Store or update TickTick token for a user.
+   * Called when user connects TickTick account.
+   */
+  async setTickTickToken(userId: string, accessToken: string, refreshToken?: string, ticktickId?: string) {
+    const existingAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (existingAccount) {
+      return this.prisma.account.update({
+        where: { id: existingAccount.id },
+        data: {
+          ticktickAccessToken: accessToken,
+          ticktickRefreshToken: refreshToken || existingAccount.ticktickRefreshToken,
+          ticktickId: ticktickId || existingAccount.ticktickId,
+          ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days default
+        },
+      });
+    }
+
+    // Create new TickTick account entry
+    return this.prisma.account.create({
+      data: {
+        provider: 'ticktick',
+        providerAccountId: ticktickId || `ticktick_${userId}`,
+        ticktickAccessToken: accessToken,
+        ticktickRefreshToken: refreshToken,
+        ticktickId: ticktickId,
+        ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
+        userId,
+      },
+    });
+  }
+
+  /**
+   * Disconnect TickTick account (remove tokens)
+   */
+  async disconnectTickTick(userId: string) {
+    const ticktickAccount = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+    });
+
+    if (ticktickAccount) {
+      await this.prisma.account.delete({
+        where: { id: ticktickAccount.id },
+      });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Check if user has TickTick connected
+   */
+  async isConnected(userId: string): Promise<boolean> {
+    const account = await this.prisma.account.findFirst({
+      where: { userId, provider: 'ticktick' },
+      select: { ticktickAccessToken: true },
+    });
+    return !!account?.ticktickAccessToken;
   }
 }

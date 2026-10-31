@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   MailIcon, 
   CalendarIcon, 
@@ -42,7 +42,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Global search & filters
+  // Mail search (server-side) & account filters
   const [searchQuery, setSearchQuery] = useState('');
   const [activeAccountFilter, setActiveAccountFilter] = useState('all');
 
@@ -89,17 +89,27 @@ export default function App() {
     }
   }, []);
 
+  // Refs for debounced server-side search and stale-response guarding
+  const searchTimerRef = useRef(null);
+  const fetchSeqRef = useRef(0);
+
   // Fetch real Google emails when logged in
-  const fetchEmails = async (page = 1, limit = 50) => {
+  // `query` triggers a server-side Gmail subject search across the whole mailbox
+  const fetchEmails = async (page = 1, limit = 50, query = '') => {
     const token = localStorage.getItem('synchro_token');
     if (!isLoggedIn || !token) return;
 
+    // Ignore stale responses (e.g. a newer search/paging request was fired)
+    fetchSeqRef.current += 1;
+    const seq = fetchSeqRef.current;
+
     setMailLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/emails?page=${page}&limit=${limit}`, {
+      const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
+      const res = await fetch(`${API_URL}/auth/emails?page=${page}&limit=${limit}${qParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
+      if (res.ok && seq === fetchSeqRef.current) {
         const data = await res.json();
         if (data.emails && Array.isArray(data.emails)) {
           setEmails(data.emails);
@@ -110,8 +120,20 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch real emails:', err);
     } finally {
-      setMailLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setMailLoading(false);
+      }
     }
+  };
+
+  // Server-side email search: debounce the input, then fetch page 1
+  // (search always resets pagination to the first page)
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      fetchEmails(1, 50, value);
+    }, 500);
   };
 
   useEffect(() => {
@@ -169,29 +191,53 @@ export default function App() {
   const [ticktickLoading, setTickTickLoading] = useState(false);
 
   // Fetch TickTick tasks when logged in
+  // Active tasks come from GET /ticktick/tasks, completed from GET /ticktick/completed —
+  // they are merged so the Tasks view can show both lists.
   const fetchTickTickTasks = async () => {
     const token = localStorage.getItem('synchro_token');
     if (!isLoggedIn || !token) return;
 
     setTickTickLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/ticktick-tasks`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const [activeRes, completedRes] = await Promise.all([
+        fetch(`${API_URL}/ticktick/tasks`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        }),
+        fetch(`${API_URL}/ticktick/completed`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        }),
+      ]);
+
+      let allTasks = [];
+      let connected = false;
+
+      if (activeRes.ok) {
+        const data = await activeRes.json();
         if (data.tasks && Array.isArray(data.tasks)) {
-          setTickTickTasks(data.tasks);
-          localStorage.setItem('synchro_ticktick_tasks', JSON.stringify(data.tasks));
+          allTasks = data.tasks;
         }
         if (typeof data.connected === 'boolean') {
-          setTickTickConnected(data.connected);
-          localStorage.setItem('synchro_ticktick_connected', String(data.connected));
+          connected = data.connected;
         }
       } else {
-        console.error(`Failed to fetch TickTick tasks: HTTP ${res.status}`);
+        console.error(`Failed to fetch TickTick tasks: HTTP ${activeRes.status}`);
       }
+
+      if (connected && completedRes.ok) {
+        const data = await completedRes.json();
+        if (data.tasks && Array.isArray(data.tasks)) {
+          // Completed tasks are appended; ids never collide since active fetch
+          // already excludes status=2 tasks
+          allTasks = [...allTasks, ...data.tasks];
+        }
+      }
+
+      setTickTickTasks(allTasks);
+      localStorage.setItem('synchro_ticktick_tasks', JSON.stringify(allTasks));
+      setTickTickConnected(connected);
+      localStorage.setItem('synchro_ticktick_connected', String(connected));
     } catch (err) {
       console.error('Failed to fetch TickTick tasks:', err);
     } finally {
@@ -205,7 +251,7 @@ export default function App() {
     if (!isLoggedIn || !token) return;
 
     try {
-      const res = await fetch(`${API_URL}/auth/ticktick/status`, {
+      const res = await fetch(`${API_URL}/ticktick/status`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -351,7 +397,7 @@ export default function App() {
     if (!token) return;
 
     try {
-      const res = await fetch(`${API_URL}/auth/ticktick/connect`, {
+      const res = await fetch(`${API_URL}/ticktick/connect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +425,7 @@ export default function App() {
     if (!token) return;
 
     try {
-      const res = await fetch(`${API_URL}/auth/ticktick/disconnect`, {
+      const res = await fetch(`${API_URL}/ticktick/disconnect`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -407,7 +453,7 @@ export default function App() {
     if (!token) return false;
 
     try {
-      const res = await fetch(`${API_URL}/auth/ticktick/tasks`, {
+      const res = await fetch(`${API_URL}/ticktick/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -477,7 +523,7 @@ export default function App() {
 
     try {
       const res = await fetch(
-        `${API_URL}/auth/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
+        `${API_URL}/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
         {
           method: 'POST',
           headers: {
@@ -520,7 +566,7 @@ export default function App() {
 
     try {
       const res = await fetch(
-        `${API_URL}/auth/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
+        `${API_URL}/ticktick/task/${task.ticktickId}?projectId=${encodeURIComponent(task.projectId)}`,
         {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
@@ -786,9 +832,11 @@ export default function App() {
               setActiveAccountFilter={setActiveAccountFilter}
               onTriggerNotification={triggerNotification}
               onOpenCompose={() => setIsComposeOpen(true)}
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
               currentPage={mailPage}
               totalPages={mailTotalPages}
-              onPageChange={(page) => fetchEmails(page, 50)}
+              onPageChange={(page) => fetchEmails(page, 50, searchQuery)}
               isLoading={mailLoading}
             />
           )}
