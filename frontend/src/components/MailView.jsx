@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon } from './Icons';
 
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
+
 // Skeleton loader component for email cards
 function EmailCardSkeleton() {
   return (
@@ -34,16 +36,14 @@ export default function MailView({
   isLoading = false
 }) {
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
-  const [selectedEmailId, setSelectedEmailId] = useState(emails.length > 0 ? emails[0].id : null);
+  const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [replyBody, setReplyBody] = useState('');
 
   // Static list pane width
   const [listPaneWidth] = useState(480);
 
-  
-
-  // Clean up selection if email is deleted
-  const selectedEmail = emails.find(e => e.id === selectedEmailId) || (emails.length > 0 ? emails[0] : null);
+  // Selected email for the detail pane; null shows the "no email selected" state
+  const selectedEmail = selectedEmailId ? emails.find(e => e.id === selectedEmailId) || null : null;
 
   const getProviderIcon = (provider) => {
     switch (provider) {
@@ -58,6 +58,20 @@ export default function MailView({
     e.stopPropagation();
     const updated = emails.map(m => m.id === emailId ? { ...m, isStarred: !m.isStarred } : m);
     onUpdateEmails(updated);
+  };
+
+  // Sync read state to Gmail: remove the UNREAD label server-side so the
+  // message shows as read in Gmail too. Fire-and-forget; local state is
+  // updated immediately so the UI stays responsive. Only Gmail-fetched
+  // messages (ids prefixed `gmail_`) are synced; local/composed ones aren't.
+  const syncReadToGmail = (mail) => {
+    if (!mail.id?.startsWith('gmail_')) return;
+    const token = localStorage.getItem('synchro_token');
+    if (!token) return;
+    fetch(`${API_URL}/auth/emails/${encodeURIComponent(mail.id)}/read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(err => console.error('Failed to sync read state to Gmail:', err));
   };
 
   const handleDeleteEmail = (emailId, e) => {
@@ -230,15 +244,15 @@ export default function MailView({
                   style={{
                     ...styles.emailCard,
                     ...(selectedEmailId === mail.id ? styles.emailCardActive : {}),
-                    ...(mail.isRead ? {} : styles.emailCardUnread)
+                    ...(mail.isRead ? styles.emailCardRead : styles.emailCardUnread)
                   }}
-                  className={`provider-${provider}`}
                   onClick={() => {
                     setSelectedEmailId(mail.id);
-                    // Mark as read
+                    // Mark as read locally + sync to Gmail
                     if (!mail.isRead) {
                       const updated = emails.map(m => m.id === mail.id ? { ...m, isRead: true } : m);
                       onUpdateEmails(updated);
+                      syncReadToGmail(mail);
                     }
                   }}
                 >
@@ -413,8 +427,8 @@ export default function MailView({
         ) : (
           <div style={styles.noEmailSelected}>
             <MailIcon size={48} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
-            <h3>No Email Selected</h3>
-            <p>Select an email from the inbox list to read its content.</p>
+            <h3 style={styles.noEmailTitle}>No Email Selected</h3>
+            <p style={styles.noEmailText}>Select an email from the inbox list to read its content.</p>
           </div>
         )}
       </div>
@@ -453,7 +467,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(192, 57, 43, 0.3)',
+    boxShadow: '0 4px 12px rgba(2, 151, 222, 0.3)',
     transition: 'background-color 0.2s',
     ':hover': {
       backgroundColor: 'var(--accent-hover)',
@@ -491,7 +505,7 @@ const styles = {
   },
   navItemActive: {
     backgroundColor: 'var(--primary-glow)',
-    color: '#c084fc',
+    color: '#0297de',
     fontWeight: '600',
   },
   listPane: {
@@ -539,21 +553,25 @@ const styles = {
   emailCard: {
     padding: '16px',
     borderBottom: '1px solid var(--border-color)',
+    borderLeft: '3px solid transparent',
     cursor: 'pointer',
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
-    transition: 'background-color 0.2s',
+    transition: 'background-color 0.2s, border-color 0.2s',
     ':hover': {
-      backgroundColor: 'rgba(29, 56, 74, 0.1)',
+      backgroundColor: 'rgba(2, 151, 222, 0.1)',
     }
   },
   emailCardActive: {
     backgroundColor: 'var(--primary-deep)',
-    borderLeft: '3px solid var(--accent)',
   },
   emailCardUnread: {
-    backgroundColor: 'rgba(29, 56, 74, 0.15)',
+    backgroundColor: 'rgba(2, 151, 222, 0.15)',
+    borderLeftColor: 'var(--mail-unread-border)',
+  },
+  emailCardRead: {
+    borderLeftColor: 'var(--mail-read-border)',
   },
   emailCardHeader: {
     display: 'flex',
@@ -879,6 +897,18 @@ const styles = {
     padding: '40px',
     color: 'var(--text-secondary)',
     textAlign: 'center',
+  },
+  noEmailTitle: {
+    margin: '0 0 8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+  },
+  noEmailText: {
+    margin: 0,
+    fontSize: '13.5px',
+    color: 'var(--text-muted)',
+    maxWidth: '280px',
   },
   skeletonCard: {
     padding: '16px',

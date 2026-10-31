@@ -28,8 +28,8 @@ export default function CalendarView({
   const hours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // 8 AM to 9 PM
 
   const routines = [
-    { id: 'r_inbox', title: 'Inbox Zero Triage', duration: 45, category: 'email', color: '#3b82f6', desc: 'Sort, reply, archive all mail inboxes.' },
-    { id: 'r_deep', title: 'Deep Work Block', duration: 120, category: 'work', color: '#8b5cf6', desc: 'Uninterrupted deep focus time.' },
+    { id: 'r_inbox', title: 'Inbox Zero Triage', duration: 45, category: 'email', color: '#0297de', desc: 'Sort, reply, archive all mail inboxes.' },
+    { id: 'r_deep', title: 'Deep Work Block', duration: 120, category: 'work', color: '#0297de', desc: 'Uninterrupted deep focus time.' },
     { id: 'r_exercise', title: 'Exercise & Health', duration: 60, category: 'health', color: '#10b981', desc: 'Workout, yoga, run, or mental break.' },
     { id: 'r_sync', title: 'Routine Planning', duration: 90, category: 'routine', color: '#f59e0b', desc: 'Plan weekly agenda and tasks.' },
   ];
@@ -115,17 +115,17 @@ export default function CalendarView({
     const height = (ev.duration / 60) * hourHeight;
 
     let bg = 'var(--primary-glow)';
-    let border = 'rgba(29, 56, 74, 0.4)';
-    let text = '#c084fc';
+    let border = 'rgba(2, 151, 222, 0.4)';
+    let text = '#0297de';
 
     switch (ev.category) {
       case 'email':
-        bg = 'rgba(29, 56, 74, 0.15)';
+        bg = 'rgba(2, 151, 222, 0.15)';
         border = 'var(--accent)';
         text = '#ffffff';
         break;
       case 'work':
-        bg = 'rgba(29, 56, 74, 0.15)';
+        bg = 'rgba(2, 151, 222, 0.15)';
         border = 'var(--primary)';
         text = '#ffffff';
         break;
@@ -442,7 +442,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(192, 57, 43, 0.3)',
+    boxShadow: '0 4px 12px rgba(2, 151, 222, 0.3)',
     transition: 'background-color 0.2s',
     ':hover': {
       backgroundColor: 'var(--accent-hover)',
@@ -487,7 +487,7 @@ const styles = {
   routineCardPlacing: {
     backgroundColor: 'var(--bg-card-hover)',
     borderColor: 'var(--accent)',
-    boxShadow: '0 0 10px rgba(192, 57, 43, 0.15)',
+    boxShadow: '0 0 10px rgba(2, 151, 222, 0.15)',
   },
   routineCardHeader: {
     display: 'flex',
@@ -518,7 +518,7 @@ const styles = {
   placingAlert: {
     padding: '12px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(192, 57, 43, 0.1)',
+    backgroundColor: 'rgba(2, 151, 222, 0.1)',
     border: '1px solid var(--accent)',
     display: 'flex',
     alignItems: 'center',
@@ -565,7 +565,7 @@ const styles = {
   dayLabelToday: {
     backgroundColor: 'var(--accent)',
     color: '#ffffff',
-    boxShadow: '0 0 10px rgba(192, 57, 43, 0.4)',
+    boxShadow: '0 0 10px rgba(2, 151, 222, 0.4)',
   },
   gridScrollContainer: {
     flexGrow: 1,
@@ -696,7 +696,7 @@ const styles = {
     cursor: 'pointer',
   },
   option: {
-    background: '#11141b',
+    background: 'var(--bg-secondary)',
     color: '#ffffff',
   },
   modalFooter: {

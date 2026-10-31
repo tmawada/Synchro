@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GmailIcon, OutlookIcon, YahooIcon, CustomIcon, PlusIcon, CloseIcon, CheckIcon } from './Icons';
+import { GmailIcon, OutlookIcon, CustomIcon, CloseIcon } from './Icons';
 
 // Google icon SVG for the sign-in button
 function GoogleColorIcon({ size = 20 }) {
@@ -14,28 +14,23 @@ function GoogleColorIcon({ size = 20 }) {
 }
 
 export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount, onLoginSuccess, apiUrl }) {
-  const [activeForm, setActiveForm] = useState(null); // 'gmail' | 'outlook' | 'yahoo' | 'custom' | null
+  const [activeForm, setActiveForm] = useState(null); // 'gmail' | 'outlook' | null
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [imapHost, setImapHost] = useState('');
-  const [imapPort, setImapPort] = useState('993');
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const providers = [
-    { id: 'gmail', name: 'Google Workspace / Gmail', icon: GmailIcon, color: '--color-gmail', placeholder: 'yourname@gmail.com' },
-    { id: 'outlook', name: 'Microsoft Outlook / Office 365', icon: OutlookIcon, color: '--color-outlook', placeholder: 'yourname@outlook.com' },
-    { id: 'yahoo', name: 'Yahoo! Mail', icon: YahooIcon, color: '--color-yahoo', placeholder: 'yourname@yahoo.com' },
-    { id: 'custom', name: 'Custom SMTP/IMAP Server', icon: CustomIcon, color: '--color-custom', placeholder: 'mail@yourdomain.com' },
+    { id: 'gmail', name: 'Google Workspace / Gmail', shortName: 'Gmail', icon: GmailIcon, color: '--color-gmail', placeholder: 'yourname@gmail.com' },
+    { id: 'outlook', name: 'Microsoft Outlook / Office 365', shortName: 'Outlook', icon: OutlookIcon, color: '--color-outlook', placeholder: 'yourname@outlook.com' },
   ];
 
   const handleOpenForm = (providerId) => {
     setActiveForm(providerId);
     setEmail('');
     setPassword('');
-    setImapHost(providerId === 'custom' ? 'imap.domain.com' : '');
     setErrorMsg('');
   };
 
@@ -131,9 +126,7 @@ export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount
       <div style={styles.glassBackground} />
       <div style={styles.card} className="glass-panel">
         <div style={styles.header}>
-          <div style={styles.logo}>
-            <span style={styles.logoText}>S</span>
-          </div>
+          <img src="/logo.png" alt="Synchro logo" style={styles.logo} />
           <h1 style={styles.title}>Synchro Workspace</h1>
           <p style={styles.subtitle}>
             A unified environment for your emails, tasks, and routines. Sign in to get started.
@@ -229,7 +222,7 @@ export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount
             disabled={isVerifying}
             style={{
               ...styles.submitBtn,
-              background: isVerifying ? '#4c1d95' : 'var(--primary)',
+              background: isVerifying ? 'var(--primary-deep)' : 'var(--primary)',
             }}
           >
             {isVerifying
@@ -282,10 +275,11 @@ export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount
                   style={styles.providerBtn}
                   className="glass-panel-interactive"
                   onClick={() => handleOpenForm(p.id)}
+                  title={p.name}
+                  aria-label={`Connect ${p.name}`}
                 >
-                  <Icon size={24} />
-                  <span style={styles.providerName}>{p.name}</span>
-                  <PlusIcon size={14} style={styles.plusIcon} />
+                  <Icon size={26} />
+                  <span style={styles.providerName}>{p.shortName}</span>
                 </button>
               );
             })}
@@ -338,35 +332,6 @@ export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount
                 />
               </div>
 
-              {activeForm === 'custom' && (
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ ...styles.formGroup, flex: 2 }}>
-                    <label style={styles.label}>IMAP Host Server</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="imap.mailserver.com"
-                      value={imapHost}
-                      onChange={(e) => setImapHost(e.target.value)}
-                      style={styles.input}
-                      disabled={isVerifying}
-                    />
-                  </div>
-                  <div style={{ ...styles.formGroup, flex: 1 }}>
-                    <label style={styles.label}>IMAP Port</label>
-                    <input
-                      type="number"
-                      required
-                      placeholder="993"
-                      value={imapPort}
-                      onChange={(e) => setImapPort(e.target.value)}
-                      style={styles.input}
-                      disabled={isVerifying}
-                    />
-                  </div>
-                </div>
-              )}
-
               <div style={styles.formGroup}>
                 <label style={styles.label}>
                   {activeForm === 'gmail' ? 'App Password' : 'Password'}
@@ -394,7 +359,7 @@ export default function Login({ connectedAccounts, onAddAccount, onRemoveAccount
                 disabled={isVerifying}
                 style={{
                   ...styles.submitBtn,
-                  background: isVerifying ? '#4c1d95' : 'var(--primary)',
+                  background: isVerifying ? 'var(--primary-deep)' : 'var(--primary)',
                 }}
               >
                 {isVerifying ? 'Verifying Credentials...' : 'Authenticate Account'}
@@ -415,7 +380,7 @@ const styles = {
     minHeight: '100vh',
     width: '100vw',
     position: 'relative',
-    backgroundColor: '#07080a',
+    backgroundColor: 'var(--bg-primary)',
     fontFamily: 'var(--font-sans)',
     overflow: 'hidden',
   },
@@ -424,7 +389,7 @@ const styles = {
     width: '400px',
     height: '400px',
     borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(29, 56, 74, 0.25) 0%, rgba(0,0,0,0) 70%)',
+    background: 'radial-gradient(circle, rgba(2, 151, 222, 0.25) 0%, rgba(0,0,0,0) 70%)',
     top: '20%',
     left: '30%',
     filter: 'blur(40px)',
@@ -449,18 +414,10 @@ const styles = {
     width: '48px',
     height: '48px',
     borderRadius: '12px',
-    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    objectFit: 'contain',
+    display: 'block',
     marginBottom: '16px',
-    boxShadow: '0 0 16px rgba(192, 57, 43, 0.4)',
-  },
-  logoText: {
-    fontFamily: 'var(--font-display)',
-    fontWeight: '800',
-    fontSize: '24px',
-    color: '#ffffff',
+    filter: 'drop-shadow(0 0 12px rgba(2, 151, 222, 0.4))',
   },
   title: {
     fontFamily: 'var(--font-display)',
@@ -533,27 +490,24 @@ const styles = {
   },
   grid: {
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'row',
     gap: '10px',
   },
   providerBtn: {
-    width: '100%',
+    flex: 1,
     display: 'flex',
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '12px',
-    padding: '12px 16px',
+    padding: '12px',
     borderRadius: '10px',
-    textAlign: 'left',
     fontSize: '14px',
-    fontWeight: '500',
+    fontWeight: '600',
     cursor: 'pointer',
   },
   providerName: {
-    flexGrow: 1,
     color: 'var(--text-primary)',
-  },
-  plusIcon: {
-    color: 'var(--text-muted)',
   },
   actions: {
     marginTop: '8px',
@@ -570,7 +524,7 @@ const styles = {
     color: '#ffffff',
     fontSize: '15px',
     fontWeight: '600',
-    boxShadow: '0 4px 20px rgba(139, 92, 246, 0.4)',
+    boxShadow: '0 4px 20px rgba(2, 151, 222, 0.4)',
     transition: 'background-color 0.2s',
   },
   warningText: {

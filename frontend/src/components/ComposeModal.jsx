@@ -218,7 +218,7 @@ const styles = {
     border: 'none',
   },
   option: {
-    background: '#11141b',
+    background: 'var(--bg-secondary)',
     color: '#ffffff',
   },
   textarea: {

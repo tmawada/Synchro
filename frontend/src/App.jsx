@@ -6,6 +6,7 @@ import {
   SettingsIcon, 
   LogOutIcon, 
   SearchIcon,
+  PanelLeftIcon,
   GmailIcon,
   OutlookIcon,
   YahooIcon,
@@ -53,8 +54,28 @@ export default function App() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [composeInitialValues, setComposeInitialValues] = useState(null);
 
+  // Sidebar expand/collapse (persisted)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(
+    () => localStorage.getItem('synchro_sidebar') !== 'closed'
+  );
+
   // Profile Dropdown state
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [headerHover, setHeaderHover] = useState(false);
+  const [themePreference, setThemePreference] = useState(() =>
+    localStorage.getItem('synchro_theme') || 'system'
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themePreference;
+    localStorage.setItem('synchro_theme', themePreference);
+  }, [themePreference]);
+
+  useEffect(() => {
+    localStorage.setItem('synchro_sidebar', isSidebarOpen ? 'open' : 'closed');
+    // Reset hover state when sidebar state changes to prevent stale overlays
+    setHeaderHover(false);
+  }, [isSidebarOpen]);
 
   // Pagination state for emails
   const [mailPage, setMailPage] = useState(1);
@@ -92,6 +113,7 @@ export default function App() {
   // Refs for debounced server-side search and stale-response guarding
   const searchTimerRef = useRef(null);
   const fetchSeqRef = useRef(0);
+  const lastToggleRef = useRef(0);
 
   // Fetch real Google emails when logged in
   // `query` triggers a server-side Gmail subject search across the whole mailbox
@@ -139,6 +161,23 @@ export default function App() {
   useEffect(() => {
     fetchEmails(1, 50);
   }, [isLoggedIn]);
+
+  // Re-sync read state when returning to the Mail tab: refetch the page the
+  // user was on so read/unread status changed in Gmail is reflected without
+  // a full reload. Only when no search is active — searching already fetches
+  // fresh results on every keystroke. The initial mount is skipped since the
+  // isLoggedIn effect above already does the first fetch.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (activeTab === 'mail' && isLoggedIn && !searchQuery) {
+      fetchEmails(mailPage, 50);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Fetch user profile on app start if logged in
   useEffect(() => {
@@ -586,10 +625,12 @@ export default function App() {
     }
   };
 
-  // Close profile dropdown when clicking outside
+  const profileRef = useRef(null);
+  const headerHoverRef = useRef(null); // I don't really need a ref for this but good to have
+
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (isProfileOpen && !event.target.closest('[data-profile-wrapper]')) {
+      if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target)) {
         setIsProfileOpen(false);
       }
     };
@@ -691,48 +732,210 @@ export default function App() {
 
   return (
     <div style={styles.appContainer}>
-      {/* Sidebar Navigation */}
-      <div style={styles.mainSidebar}>
-        <div style={styles.sidebarHeader}>
-          <div style={styles.logoBadge}>S</div>
+      {/* Sidebar Navigation (collapsible) */}
+      <div style={{ ...styles.mainSidebar, width: isSidebarOpen ? 240 : 76 }}>
+        <div style={{ ...styles.sidebarHeader, ...(isSidebarOpen ? styles.sidebarHeaderExpanded : styles.sidebarHeaderCollapsed) }}>
+          <div
+            key={isSidebarOpen ? 'open' : 'closed'}
+            style={{
+              ...styles.logoWrapper,
+              cursor: isSidebarOpen ? 'default' : 'pointer'
+            }}
+            onClick={() => {
+              if (!isSidebarOpen) {
+                const now = Date.now();
+                if (now - lastToggleRef.current > 300) {
+                  setIsSidebarOpen(true);
+                  setHeaderHover(false);
+                  lastToggleRef.current = now;
+                }
+              }
+            }}
+            onMouseEnter={() => !isSidebarOpen && setHeaderHover(true)}
+            onMouseLeave={() => setHeaderHover(false)}
+            title={!isSidebarOpen ? 'Expand' : ''}
+          >
+            <img
+              src="/logo.png"
+              alt="Synchro logo"
+              style={{
+                ...styles.logoBadge,
+                opacity: (!isSidebarOpen && headerHover) ? 0.2 : 1,
+                transition: 'opacity 0.2s'
+              }}
+            />
+            {!isSidebarOpen && headerHover && (
+              <div style={styles.logoOverlay}>
+                <PanelLeftIcon size={18} style={{ transform: 'rotate(180deg)', transition: 'transform 0.3s' }} />
+              </div>
+            )}
+          </div>
+          {isSidebarOpen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', animation: 'fadeInSlide 0.3s ease-out forwards' }}>
+              <span style={{ ...styles.brandName, animation: 'none' }}>Synchro</span>
+              <button
+                style={styles.headerToggleButton}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsSidebarOpen(false);
+                  setHeaderHover(false);
+                }}
+                title="Collapse"
+                className="sidebar-nav-item"
+              >
+                <PanelLeftIcon size={18} />
+              </button>
+            </div>
+          )}
         </div>
 
         <nav style={styles.sidebarNav}>
-          <button 
-            style={{...styles.navBtn, ...(activeTab === 'mail' ? styles.navBtnActive : {})}}
+          <button
+            className={`sidebar-nav-item ${activeTab === 'mail' ? 'sidebar-nav-item-active' : ''}`}
+            style={{
+              ...styles.navBtn,
+              ...(activeTab === 'mail' ? styles.navBtnActive : {}),
+            }}
             onClick={() => setActiveTab('mail')}
-            title="Mail Integration Inbox"
+            title="Mails"
           >
-            <MailIcon size={20} />
-            <span style={styles.navText}>Mail</span>
-            {emails.filter(e => e.folder === 'inbox' && !e.isRead).length > 0 && (
-              <div style={styles.badgeDot} />
-            )}
+            <div style={styles.navIconWrapper}>
+              <MailIcon size={22} />
+              {emails.filter(e => e.folder === 'inbox' && !e.isRead).length > 0 && (
+                <div style={styles.badgeDot} />
+              )}
+            </div>
+            {isSidebarOpen && <span style={styles.navText}>Mails</span>}
           </button>
-          
-          <button 
-            style={{...styles.navBtn, ...(activeTab === 'calendar' ? styles.navBtnActive : {})}}
+
+          <button
+            className={`sidebar-nav-item ${activeTab === 'calendar' ? 'sidebar-nav-item-active' : ''}`}
+            style={{
+              ...styles.navBtn,
+              ...(activeTab === 'calendar' ? styles.navBtnActive : {}),
+            }}
             onClick={() => setActiveTab('calendar')}
-            title="Routine Calendar Blocker"
+            title="Calendar"
           >
-            <CalendarIcon size={20} />
-            <span style={styles.navText}>Calendar</span>
+            <div style={styles.navIconWrapper}>
+              <CalendarIcon size={22} />
+            </div>
+            {isSidebarOpen && <span style={styles.navText}>Calendar</span>}
           </button>
-          
-          <button 
-            style={{...styles.navBtn, ...(activeTab === 'tasks' ? styles.navBtnActive : {})}}
+
+          <button
+            className={`sidebar-nav-item ${activeTab === 'tasks' ? 'sidebar-nav-item-active' : ''}`}
+            style={{
+              ...styles.navBtn,
+              ...(activeTab === 'tasks' ? styles.navBtnActive : {}),
+            }}
             onClick={() => setActiveTab('tasks')}
-            title="Tasks Manager"
+            title="Tasks"
           >
-            <CheckSquareIcon size={20} />
-            <span style={styles.navText}>Tasks</span>
-            {(tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)) > 0 && (
-              <div style={styles.badgeCount}>
-                {tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)}
+            <div style={styles.navIconWrapper}>
+              <CheckSquareIcon size={22} />
+              {(tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)) > 0 && (
+                <div style={styles.badgeCount}>
+                  {tasks.filter(t => !t.completed).length + (ticktickConnected ? ticktickTasks.filter(t => !t.completed).length : 0)}
+                </div>
+              )}
+            </div>
+            {isSidebarOpen && <span style={styles.navText}>Tasks</span>}
+          </button>
+        </nav>
+
+        {/* Profile (sidebar bottom) */}
+        <div
+          ref={profileRef}
+          style={{ ...styles.sidebarFooter, ...(isSidebarOpen ? styles.sidebarFooterExpanded : {}) }}
+        >
+          <button
+            className="sidebar-nav-item"
+            style={{ ...styles.profileBadgeWrapper, ...(isSidebarOpen ? styles.profileBadgeWrapperExpanded : {}) }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsProfileOpen(!isProfileOpen);
+            }}
+          >
+            <div style={styles.profileBadge}>
+              {authUser?.avatarUrl ? (
+                <img
+                  src={authUser.avatarUrl}
+                  alt={authUser.name || 'User'}
+                  style={styles.profileAvatar}
+                />
+              ) : (
+                <span style={styles.profileInitial}>
+                  {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+            {isSidebarOpen && (
+              <div style={styles.profileInfo}>
+                <span style={styles.profileName}>{authUser?.name || 'User'}</span>
+                <span style={styles.profileEmail}>{authUser?.email || ''}</span>
               </div>
             )}
           </button>
-        </nav>
+          {isProfileOpen && (
+            <div style={styles.sidebarProfileDropdown}>
+              <div style={styles.dropdownHeader}>
+                {authUser?.avatarUrl ? (
+                  <img
+                    src={authUser.avatarUrl}
+                    alt={authUser.name || 'User'}
+                    style={styles.dropdownAvatar}
+                  />
+                ) : (
+                  <div style={styles.dropdownAvatarPlaceholder}>
+                    {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div style={styles.dropdownUserInfo}>
+                  <span style={styles.dropdownUserName}>
+                    {authUser?.name || 'User'}
+                  </span>
+                  <span style={styles.dropdownUserEmail}>
+                    {authUser?.email || ''}
+                  </span>
+                </div>
+              </div>
+              <div style={styles.dropdownDivider} />
+              <div style={styles.preferencesSection}>
+                <span style={styles.preferencesTitle}>Preferences</span>
+                <span style={styles.themeLabel}>Theme</span>
+                <div style={styles.themeOptions} role="group" aria-label="Theme preference">
+                  {[
+                    { value: 'system', label: 'System' },
+                    { value: 'light', label: 'Light' },
+                    { value: 'dark', label: 'Dark' },
+                  ].map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      style={{
+                        ...styles.themeOption,
+                        ...(themePreference === option.value ? styles.themeOptionActive : {}),
+                      }}
+                      aria-pressed={themePreference === option.value}
+                      onClick={() => setThemePreference(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={styles.dropdownDivider} />
+              <button
+                style={styles.dropdownItem}
+                onClick={handleLogout}
+              >
+                <LogOutIcon size={16} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main Workspace Frame */}
@@ -741,9 +944,9 @@ export default function App() {
         <header style={styles.topbar}>
           <div style={styles.topbarTitleArea}>
             <h1 style={styles.viewTitle}>
-              {activeTab === 'mail' && 'Unified Mailbox'}
+              {activeTab === 'mail' && 'Mails'}
               {activeTab === 'calendar' && 'Routine Calendar Blocking'}
-              {activeTab === 'tasks' && 'Focus Todo Tasks'}
+              {activeTab === 'tasks' && 'Tasks'}
             </h1>
           </div>
 
@@ -758,63 +961,6 @@ export default function App() {
                   </div>
                 );
               })}
-            </div>
-
-            {/* Profile Dropdown */}
-            <div data-profile-wrapper style={styles.profileWrapper}>
-              <button
-                style={styles.profileBadge}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsProfileOpen(!isProfileOpen);
-                }}
-                aria-label="User profile"
-              >
-                {authUser?.avatarUrl ? (
-                  <img
-                    src={authUser.avatarUrl}
-                    alt={authUser.name || 'User'}
-                    style={styles.profileAvatar}
-                  />
-                ) : (
-                  <span style={styles.profileInitial}>
-                    {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
-                  </span>
-                )}
-              </button>
-              {isProfileOpen && (
-                <div style={styles.profileDropdown}>
-                  <div style={styles.dropdownHeader}>
-                    {authUser?.avatarUrl ? (
-                      <img
-                        src={authUser.avatarUrl}
-                        alt={authUser.name || 'User'}
-                        style={styles.dropdownAvatar}
-                      />
-                    ) : (
-                      <div style={styles.dropdownAvatarPlaceholder}>
-                        {(authUser?.name || authUser?.email || 'U').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div style={styles.dropdownUserInfo}>
-                      <span style={styles.dropdownUserName}>
-                        {authUser?.name || 'User'}
-                      </span>
-                      <span style={styles.dropdownUserEmail}>
-                        {authUser?.email || ''}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={styles.dropdownDivider} />
-                  <button
-                    style={styles.dropdownItem}
-                    onClick={handleLogout}
-                  >
-                    <LogOutIcon size={16} />
-                    <span>Sign out</span>
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </header>
@@ -905,99 +1051,364 @@ const styles = {
     fontFamily: 'var(--font-sans)',
   },
   mainSidebar: {
-    width: '76px',
+    position: 'relative',
     backgroundColor: 'var(--bg-primary)',
     borderRight: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    padding: '20px 0',
+    alignItems: 'flex-start',
+    padding: '24px 0',
     flexShrink: 0,
     boxSizing: 'border-box',
+    overflow: 'visible',
+    zIndex: 100,
+    transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   sidebarHeader: {
-    marginBottom: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    width: '100%',
+    padding: '0 19px',
+    marginBottom: '40px',
+    boxSizing: 'border-box',
+    height: '38px',
+    flexShrink: 0,
+  },
+  sidebarHeaderExpanded: {
+    gap: '14px',
+  },
+  sidebarHeaderCollapsed: {
+    justifyContent: 'center',
+    padding: '0',
+  },
+  brandName: {
+    fontFamily: 'var(--font-display)',
+    fontSize: '20px',
+    fontWeight: '800',
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+    letterSpacing: '-0.5px',
+    animation: 'fadeInSlide 0.3s ease-out forwards',
+  },
+  headerToggleButton: {
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '8px',
+    border: 'none',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    marginLeft: 'auto',
+  },
+  logoContainer: {
+    width: '38px',
+    height: '38px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  logoWrapper: {
+    position: 'relative',
+    width: '38px',
+    height: '38px',
+    padding: 0,
+    border: 'none',
+    background: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '10px',
+    flexShrink: 0,
+    transition: 'background-color 0.2s',
+  },
+  logoOverlay: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--accent)',
+    animation: 'fadeIn 0.2s ease-out',
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: '10px',
   },
   logoBadge: {
     width: '38px',
     height: '38px',
     borderRadius: '10px',
-    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-    color: '#ffffff',
-    fontSize: '20px',
-    fontWeight: '800',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontFamily: 'var(--font-display)',
-    boxShadow: '0 0 12px rgba(192, 57, 43, 0.3)',
+    objectFit: 'contain',
+    display: 'block',
+    filter: 'drop-shadow(0 0 10px rgba(2, 151, 222, 0.4))',
   },
   sidebarNav: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '8px',
     flexGrow: 1,
     width: '100%',
-    alignItems: 'center',
+    overflow: 'hidden',
   },
   navBtn: {
-    width: '46px',
-    height: '46px',
-    borderRadius: '10px',
+    width: '100%',
+    height: '52px',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
     color: 'var(--text-secondary)',
-    transition: 'all 0.2s',
+    transition: 'all 0.2s ease',
     position: 'relative',
-    ':hover': {
-      backgroundColor: 'rgba(255,255,255,0.04)',
-      color: 'var(--text-primary)',
-    }
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '0 27px',
+    flexShrink: 0,
   },
   navBtnActive: {
-    backgroundColor: 'var(--primary-glow)',
     color: 'var(--accent)',
+    backgroundColor: 'rgba(2, 151, 222, 0.08)',
+  },
+  navIconWrapper: {
+    width: '22px',
+    height: '22px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    position: 'relative',
   },
   navText: {
-    fontSize: '9px',
+    marginLeft: '16px',
+    fontSize: '14px',
     fontWeight: '600',
-    marginTop: '4px',
+    whiteSpace: 'nowrap',
+    animation: 'fadeInSlide 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards',
   },
   badgeDot: {
     position: 'absolute',
-    top: '8px',
-    right: '8px',
-    width: '6px',
-    height: '6px',
+    top: '-2px',
+    right: '-2px',
+    width: '8px',
+    height: '8px',
     borderRadius: '50%',
-    backgroundColor: 'var(--danger)',
+    backgroundColor: 'var(--accent)',
+    border: '2px solid var(--bg-primary)',
   },
   badgeCount: {
     position: 'absolute',
-    top: '4px',
-    right: '4px',
-    fontSize: '9px',
+    top: '-6px',
+    right: '-8px',
+    fontSize: '10px',
     fontWeight: '700',
-    backgroundColor: 'var(--primary)',
+    backgroundColor: 'var(--accent)',
     color: '#ffffff',
     padding: '2px 5px',
-    borderRadius: '8px',
+    borderRadius: '10px',
     lineHeight: '1',
+    minWidth: '14px',
+    textAlign: 'center',
   },
   sidebarFooter: {
+    position: 'relative',
     marginTop: 'auto',
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    padding: '0',
+    boxSizing: 'border-box',
+    flexShrink: 0,
+    borderTop: '1px solid var(--border-color)',
+    backgroundColor: 'var(--bg-primary)',
+    zIndex: 10,
   },
-  logoutBtn: {
+  sidebarFooterExpanded: {
+    alignItems: 'stretch',
+  },
+  profileBadgeWrapper: {
+    width: '100%',
+    height: '64px',
+    display: 'flex',
+    alignItems: 'center',
+    padding: '0 20px',
+    backgroundColor: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+    position: 'relative',
+    zIndex: 2,
+  },
+  profileBadgeWrapperExpanded: {
+    padding: '0 20px',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  profileBadge: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    border: '1px solid rgba(255,255,255,0.1)',
+    boxShadow: '0 0 15px rgba(2, 151, 222, 0.2)',
+  },
+  profileInitial: {
+    fontSize: '14px',
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  profileAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+    border: '1px solid rgba(255,255,255,0.1)',
+  },
+  profileInfo: {
+    marginLeft: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    overflow: 'hidden',
+  },
+  profileName: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+  },
+  profileEmail: {
+    fontSize: '11px',
     color: 'var(--text-muted)',
-    padding: '8px',
+    whiteSpace: 'nowrap',
+    width: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  sidebarProfileDropdown: {
+    position: 'absolute',
+    bottom: '0',
+    left: 'calc(100% + 12px)',
+    width: '260px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '12px',
+    boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+    backdropFilter: 'blur(16px)',
+    zIndex: 1000,
+    overflow: 'hidden',
+    animation: 'slideUp 0.2s ease-out',
+  },
+  dropdownHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '16px',
+  },
+  dropdownAvatar: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    objectFit: 'cover',
+  },
+  dropdownAvatarPlaceholder: {
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  dropdownUserInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+  },
+  dropdownUserName: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  dropdownUserEmail: {
+    fontSize: '12px',
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  dropdownDivider: {
+    borderTop: '1px solid var(--border-color)',
+  },
+  preferencesSection: {
+    padding: '12px 16px 14px',
+  },
+  preferencesTitle: {
+    display: 'block',
+    marginBottom: '10px',
+    color: 'var(--text-primary)',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  themeLabel: {
+    display: 'block',
+    marginBottom: '7px',
+    color: 'var(--text-secondary)',
+    fontSize: '12px',
+  },
+  themeOptions: {
+    display: 'flex',
+    gap: '4px',
+    padding: '3px',
     borderRadius: '8px',
-    transition: 'color 0.2s, background-color 0.2s',
+    backgroundColor: 'var(--bg-tertiary)',
+  },
+  themeOption: {
+    flex: 1,
+    padding: '6px 4px',
+    borderRadius: '6px',
+    border: '1px solid transparent',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    fontSize: '11px',
+    fontWeight: '500',
+    whiteSpace: 'nowrap',
+  },
+  themeOptionActive: {
+    backgroundColor: 'var(--bg-card)',
+    borderColor: 'var(--border-color-active)',
+    color: 'var(--text-primary)',
+    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.12)',
+  },
+  dropdownItem: {
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--danger)',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
     ':hover': {
-      color: 'var(--danger)',
-      backgroundColor: 'rgba(239, 68, 68, 0.05)',
-    }
+      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    },
   },
   workspace: {
     flexGrow: 1,
@@ -1047,109 +1458,6 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  profileBadge: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: '1px solid rgba(255,255,255,0.1)',
-    boxShadow: '0 0 15px rgba(192, 57, 43, 0.3)',
-  },
-  profileInitial: {
-    fontSize: '13px',
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  profileAvatar: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    objectFit: 'cover',
-    border: '1px solid rgba(255,255,255,0.1)',
-  },
-  profileWrapper: {
-    position: 'relative',
-  },
-  profileDropdown: {
-    position: 'absolute',
-    top: 'calc(100% + 8px)',
-    right: 0,
-    width: '260px',
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '12px',
-    boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
-    backdropFilter: 'blur(16px)',
-    zIndex: 100,
-    overflow: 'hidden',
-  },
-  dropdownHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '16px',
-  },
-  dropdownAvatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    objectFit: 'cover',
-  },
-  dropdownAvatarPlaceholder: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  dropdownUserInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    minWidth: 0,
-  },
-  dropdownUserName: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: 'var(--text-primary)',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  dropdownUserEmail: {
-    fontSize: '12px',
-    color: 'var(--text-secondary)',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  dropdownDivider: {
-    borderTop: '1px solid var(--border-color)',
-  },
-  dropdownItem: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '12px 16px',
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--danger)',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-    ':hover': {
-      backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    },
   },
   contentContainer: {
     flexGrow: 1,

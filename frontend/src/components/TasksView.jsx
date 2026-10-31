@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PlusIcon, TrashIcon, CheckSquareIcon, CalendarIcon, InfoIcon, MailIcon, SettingsIcon, RefreshIcon, LinkIcon, UnlinkIcon, EditIcon, CloseIcon, MoreVerticalIcon } from './Icons';
 
 // TickTick-style priority shortcuts: type "!high", "!medium" or "!low" in the title
@@ -114,6 +114,9 @@ export default function TasksView({
   const [suggestIdx, setSuggestIdx] = useState(0);
   const [dismissedToken, setDismissedToken] = useState(null);
 
+  // Ref for the native date picker overlaid inside the task input
+  const composerDateRef = useRef(null);
+
   // Which task's 3-dot menu is open (task id, or null)
   const [openMenuTaskId, setOpenMenuTaskId] = useState(null);
 
@@ -165,6 +168,16 @@ export default function TasksView({
       e.preventDefault();
       setDismissedToken(prefix);
     }
+  };
+
+  // Enter adds the task; Shift+Enter is left alone (and suggestions take priority)
+  const handleComposerKeyDown = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    const { prefix, list } = composerSuggest;
+    // Let the suggestion handler accept the highlighted shortcut instead
+    if (list.length > 0 && prefix !== dismissedToken) return;
+    e.preventDefault();
+    handleSubmit(e);
   };
 
   const acceptComposerSuggestion = (s) => {
@@ -496,15 +509,46 @@ export default function TasksView({
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.composerFirstRow}>
               <div style={styles.suggestWrapper}>
-                <input
-                  type="text"
-                  required
-                  placeholder="What is your next task? Type ! for priority"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onKeyDown={(e) => handleSuggestKeyDown(e, composerSuggest, acceptComposerSuggestion)}
-                  style={styles.taskInput}
-                />
+                <div style={styles.taskInputWrap}>
+                  <input
+                    type="text"
+                    required
+                    placeholder="What is your next task? Type ! for priority"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      handleSuggestKeyDown(e, composerSuggest, acceptComposerSuggestion);
+                      if (!e.defaultPrevented) handleComposerKeyDown(e);
+                    }}
+                    style={styles.taskInput}
+                  />
+                  {/* Native date input, invisible, opened by the calendar icon */}
+                  <input
+                    ref={composerDateRef}
+                    type="date"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    style={styles.hiddenDateInput}
+                  />
+                  <button
+                    type="button"
+                    style={styles.dateIconBtn}
+                    onClick={() => {
+                      const el = composerDateRef.current;
+                      if (!el) return;
+                      // showPicker() is the reliable way to open a hidden date input
+                      if (typeof el.showPicker === 'function') el.showPicker();
+                      else el.click();
+                    }}
+                    title={dueDate ? `Due ${dueDate}` : 'Set due date'}
+                    aria-label="Set due date"
+                  >
+                    <CalendarIcon size={15} />
+                    {dueDate && <span style={styles.dateChipText}>{formatDueLabel(dueDate)}</span>}
+                  </button>
+                </div>
                 {composerSuggestOpen && (
                   <div style={styles.suggestDropdown} className="glass-panel">
                     <div style={styles.suggestHint}>Priority shortcuts</div>
@@ -534,9 +578,13 @@ export default function TasksView({
                   </div>
                 )}
               </div>
-              <button type="submit" style={styles.addTaskBtn}>
-                <PlusIcon size={16} style={{ marginRight: '6px' }} />
-                {ticktickConnected ? 'Add to TickTick' : 'Add Task'}
+              <button
+                type="submit"
+                style={styles.addTaskBtn}
+                title={ticktickConnected ? 'Add to TickTick' : 'Add task'}
+                aria-label={ticktickConnected ? 'Add to TickTick' : 'Add task'}
+              >
+                <PlusIcon size={18} />
               </button>
             </div>
 
@@ -547,46 +595,6 @@ export default function TasksView({
               </div>
             )}
 
-            <div style={styles.composerSecondRow}>
-              <div style={styles.settingGroup}>
-                <span style={styles.settingLabel}>List:</span>
-                <select value={listType} onChange={(e) => setListType(e.target.value)} style={styles.composerSelect}>
-                  <option value="work">Work</option>
-                  <option value="personal">Personal</option>
-                  <option value="routine">Routine</option>
-                </select>
-              </div>
-
-              <div style={styles.settingGroup}>
-                <span style={styles.settingLabel}>Priority:</span>
-                <select value={priority} onChange={(e) => setPriority(e.target.value)} style={styles.composerSelect}>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-              </div>
-
-              <div style={styles.settingGroup}>
-                <span style={styles.settingLabel}>Duration:</span>
-                <select value={duration} onChange={(e) => setDuration(parseInt(e.target.value))} style={styles.composerSelect}>
-                  <option value={30}>30 min</option>
-                  <option value={45}>45 min</option>
-                  <option value={60}>1 hour</option>
-                  <option value={90}>1.5 hour</option>
-                  <option value={120}>2 hours</option>
-                </select>
-              </div>
-
-              <div style={styles.settingGroup}>
-                <span style={styles.settingLabel}>Due:</span>
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  style={styles.datePicker}
-                />
-              </div>
-            </div>
           </form>
         </div>
 
@@ -662,7 +670,7 @@ export default function TasksView({
                       {(task.emailRef || (isTickTickTask(task) && task.projectName && task.projectName.toLowerCase() !== 'inbox')) && (
                         <div style={styles.taskDetails}>
                           {isTickTickTask(task) && task.projectName && task.projectName.toLowerCase() !== 'inbox' && (
-                            <span style={{ ...styles.prioTag, color: 'var(--primary)', backgroundColor: 'rgba(139, 92, 246, 0.15)', fontSize: '9px' }}>
+                            <span style={{ ...styles.prioTag, color: 'var(--primary)', backgroundColor: 'rgba(2, 151, 222, 0.15)', fontSize: '9px' }}>
                               <LinkIcon size={10} style={{ marginRight: '3px', verticalAlign: 'middle' }} />
                               {task.projectName}
                             </span>
@@ -1024,26 +1032,66 @@ const styles = {
     display: 'flex',
     gap: '12px',
   },
+  taskInputWrap: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
   taskInput: {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '10px 14px',
+    padding: '10px 44px 10px 14px', // right padding leaves room for the date icon
     borderRadius: '8px',
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
     fontSize: '14px',
     color: 'var(--text-primary)',
   },
+  hiddenDateInput: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    padding: 0,
+    border: 0,
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  dateIconBtn: {
+    position: 'absolute',
+    right: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '5px',
+    padding: '4px 6px',
+    borderRadius: '6px',
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    fontSize: '11.5px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'color 0.2s, background-color 0.2s',
+    ':hover': {
+      color: 'var(--primary)',
+      backgroundColor: 'var(--primary-glow)',
+    },
+  },
+  dateChipText: {
+    whiteSpace: 'nowrap',
+  },
   addTaskBtn: {
-    padding: '10px 20px',
+    flexShrink: 0,
+    width: '40px',
+    height: '40px',
     borderRadius: '8px',
     backgroundColor: 'var(--primary)',
     color: '#ffffff',
-    fontSize: '13.5px',
-    fontWeight: '600',
     display: 'flex',
     alignItems: 'center',
-    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+    justifyContent: 'center',
+    boxShadow: '0 4px 12px rgba(2, 151, 222, 0.25)',
     transition: 'background-color 0.2s',
     ':hover': {
       backgroundColor: 'var(--primary-hover)',
