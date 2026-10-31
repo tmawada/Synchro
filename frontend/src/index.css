@@ -400,3 +400,174 @@ input, textarea, select {
 .bg-outlook { background-color: var(--color-outlook); }
 .bg-yahoo { background-color: var(--color-yahoo); }
 .bg-custom { background-color: var(--color-custom); }
+
+/* Email HTML content styling */
+.email-html-content {
+  color: var(--text-primary);
+
+  /* Reset all nested elements to remove default email client borders */
+  * {
+    border: none !important;
+    box-sizing: border-box;
+  }
+
+  /* Force background to match theme, but keep text visible */
+  background-color: transparent !important;
+}
+
+/* Override backgrounds but NOT text colors */
+.email-html-content * {
+  background-color: transparent !important;
+}
+
+/* Force text to be visible in dark theme */
+.email-html-content,
+.email-html-content p,
+.email-html-content div,
+.email-html-content span,
+.email-html-content td,
+.email-html-content th,
+.email-html-content li,
+.email-html-content h1,
+.email-html-content h2,
+.email-html-content h3,
+.email-html-content h4,
+.email-html-content h5,
+.email-html-content h6 {
+  color: var(--text-primary) !important;
+}
+
+.email-html-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 12px auto;
+  border-radius: 0;
+  background-color: transparent !important;
+}
+
+/* Handle broken/blocked images gracefully */
+.email-html-content img[src] {
+  /* Allow mixed content and external images */
+  content: '';
+}
+
+.email-html-content img::before {
+  content: '';
+  display: block;
+}
+
+/* Hide alt text for broken images to keep layout clean */
+.email-html-content img[alt]:not([src=""]) {
+  font-size: 0;
+  color: transparent;
+}
+
+.email-html-content table {
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  background: transparent !important;
+}
+
+.email-html-content table td,
+.email-html-content table th {
+  padding: 8px;
+  vertical-align: top;
+  background-color: transparent !important;
+}
+
+.email-html-content p {
+  margin: 0 0 12px 0;
+  line-height: 1.6;
+  background-color: transparent !important;
+}
+
+.email-html-content div {
+  max-width: 100%;
+  background-color: transparent !important;
+}
+
+.email-html-content a {
+  color: var(--primary) !important;
+  text-decoration: none;
+  transition: color 0.2s;
+  background-color: transparent !important;
+}
+
+.email-html-content a:hover {
+  color: var(--primary-hover) !important;
+  text-decoration: underline;
+}
+
+.email-html-content ul,
+.email-html-content ol {
+  margin: 0 0 12px 0;
+  padding-left: 24px;
+  background-color: transparent !important;
+}
+
+.email-html-content li {
+  background-color: transparent !important;
+}
+
+.email-html-content blockquote {
+  margin: 12px 0;
+  padding-left: 16px;
+  border-left: 3px solid var(--primary) !important;
+  color: var(--text-secondary) !important;
+  font-style: italic;
+  background-color: transparent !important;
+}
+
+.email-html-content pre,
+.email-html-content code {
+  background-color: var(--bg-tertiary) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: var(--text-primary) !important;
+}
+
+.email-html-content pre {
+  padding: 12px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.email-html-content strong,
+.email-html-content em,
+.email-html-content b,
+.email-html-content i {
+  background-color: transparent !important;
+  color: inherit;
+}
+
+/* Override inline styles from email clients */
+.email-html-content [style*="border"] {
+  border: none !important;
+}
+
+.email-html-content [style*="width"] {
+  max-width: 100% !important;
+  width: auto !important;
+}
+
+.email-html-content [style*="background"],
+.email-html-content [bgcolor] {
+  background-color: transparent !important;
+}
+
+/* Override inline text colors to ensure readability */
+.email-html-content [style*="color"] {
+  color: var(--text-primary) !important;
+}
+
+.email-html-content font[color] {
+  color: var(--text-primary) !important;
+}
+
+
+

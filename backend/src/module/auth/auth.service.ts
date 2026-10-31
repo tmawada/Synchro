@@ -341,6 +341,116 @@ export class AuthService {
 
   /**
    * Helper to parse full text/plain or text/html email body from Gmail payload.
+   * Also processes inline images (cid: references) by embedding them as data URIs.
+   */
+  private async extractGmailBodyWithImages(
+    payload: any,
+    messageId: string,
+    googleFetch: (url: string) => Promise<Response | null>,
+  ): Promise<string> {
+    if (!payload) return '';
+
+    // Collect inline attachments (images with Content-ID)
+    const inlineImages = new Map<string, string>();
+
+    const collectInlineImages = async (part: any) => {
+      if (part.body?.attachmentId && part.headers) {
+        const contentIdHeader = part.headers.find((h: any) => h.name.toLowerCase() === 'content-id');
+        if (contentIdHeader) {
+          // Extract CID (remove < and >)
+          const cid = contentIdHeader.value.replace(/^<|>$/g, '');
+          const mimeType = part.mimeType || 'image/png';
+
+          try {
+            // Fetch the attachment data from Gmail API
+            const attachmentRes = await googleFetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${part.body.attachmentId}`,
+            );
+
+            if (attachmentRes) {
+              const attachmentData = await attachmentRes.json() as any;
+              if (attachmentData.data) {
+                // Gmail returns base64url encoded data, convert to standard base64
+                const base64Data = attachmentData.data.replace(/-/g, '+').replace(/_/g, '/');
+                inlineImages.set(cid, `data:${mimeType};base64,${base64Data}`);
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch inline image attachment ${part.body.attachmentId}:`, error);
+          }
+        }
+      } else if (part.body?.data && part.headers) {
+        // Inline image data is directly in the body
+        const contentIdHeader = part.headers.find((h: any) => h.name.toLowerCase() === 'content-id');
+        if (contentIdHeader) {
+          const cid = contentIdHeader.value.replace(/^<|>$/g, '');
+          const mimeType = part.mimeType || 'image/png';
+          const base64Data = part.body.data.replace(/-/g, '+').replace(/_/g, '/');
+          inlineImages.set(cid, `data:${mimeType};base64,${base64Data}`);
+        }
+      }
+
+      // Recursively search nested parts
+      if (part.parts && Array.isArray(part.parts)) {
+        for (const subPart of part.parts) {
+          await collectInlineImages(subPart);
+        }
+      }
+    };
+
+    await collectInlineImages(payload);
+
+    // Direct body data
+    if (payload.body?.data) {
+      let html = Buffer.from(payload.body.data, 'base64url').toString('utf-8');
+      // Replace CID references with data URIs
+      inlineImages.forEach((dataUri, cid) => {
+        html = html.replace(new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), dataUri);
+      });
+      return html;
+    }
+
+    // Multipart body parts - prefer HTML over plain text
+    if (payload.parts && Array.isArray(payload.parts)) {
+      const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
+      if (htmlPart?.body?.data) {
+        let html = Buffer.from(htmlPart.body.data, 'base64url').toString('utf-8');
+        // Replace CID references with data URIs
+        inlineImages.forEach((dataUri, cid) => {
+          html = html.replace(new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), dataUri);
+        });
+        return html;
+      }
+
+      const plainPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
+      if (plainPart?.body?.data) {
+        const text = Buffer.from(plainPart.body.data, 'base64url').toString('utf-8');
+        // Convert plain text to HTML paragraphs
+        return text.split('\n').map(line => `<p>${line}</p>`).join('');
+      }
+
+      // Recursively search nested multipart structures
+      for (const part of payload.parts) {
+        if (part.mimeType && part.mimeType.startsWith('multipart/')) {
+          const nested = await this.extractGmailBodyWithImages(part, messageId, googleFetch);
+          if (nested) {
+            let html = nested;
+            // Replace CID references with data URIs
+            inlineImages.forEach((dataUri, cid) => {
+              html = html.replace(new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), dataUri);
+            });
+            return html;
+          }
+        }
+      }
+    }
+
+    return '';
+  }
+
+  /**
+   * Helper to parse full text/plain or text/html email body from Gmail payload.
+   * Synchronous version for backward compatibility.
    */
   private extractGmailBody(payload: any): string {
     if (!payload) return '';
@@ -350,28 +460,26 @@ export class AuthService {
       return Buffer.from(payload.body.data, 'base64url').toString('utf-8');
     }
 
-    // Multipart body parts
+    // Multipart body parts - prefer HTML over plain text
     if (payload.parts && Array.isArray(payload.parts)) {
-      const plainPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
-      if (plainPart?.body?.data) {
-        return Buffer.from(plainPart.body.data, 'base64url').toString('utf-8');
-      }
-
       const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
       if (htmlPart?.body?.data) {
         const html = Buffer.from(htmlPart.body.data, 'base64url').toString('utf-8');
-        return html
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-          .replace(/<[^>]*>/g, ' ')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        return html;
       }
 
+      const plainPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
+      if (plainPart?.body?.data) {
+        const text = Buffer.from(plainPart.body.data, 'base64url').toString('utf-8');
+        return text.split('\n').map(line => `<p>${line}</p>`).join('');
+      }
+
+      // Recursively search nested multipart structures
       for (const part of payload.parts) {
-        const nested = this.extractGmailBody(part);
-        if (nested) return nested;
+        if (part.mimeType && part.mimeType.startsWith('multipart/')) {
+          const nested = this.extractGmailBody(part);
+          if (nested) return nested;
+        }
       }
     }
 
@@ -487,7 +595,7 @@ export class AuthService {
           batch.map(async (msg) => {
             try {
               const detailRes = await googleFetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
               );
               if (!detailRes) return null;
 
@@ -517,6 +625,9 @@ export class AuthService {
                 } catch {}
               }
 
+              // Extract full HTML body with inline images or fallback to plain text
+              const emailBody = await this.extractGmailBodyWithImages(data.payload, msg.id, googleFetch) || data.snippet || '(No preview available)';
+
               return {
                 id: `gmail_${data.id}`,
                 subject: getHeader('Subject') || '(No Subject)',
@@ -524,7 +635,7 @@ export class AuthService {
                 senderName: senderName || senderEmail,
                 to: getHeader('To') || 'me',
                 account: account.providerAccountId || 'google',
-                body: data.snippet || '(No preview available)',
+                body: emailBody,
                 folder: 'inbox',
                 date: formattedDate,
                 isRead: !data.labelIds?.includes('UNREAD'),

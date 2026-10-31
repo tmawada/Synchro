@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon } from './Icons';
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
@@ -38,9 +38,55 @@ export default function MailView({
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
   const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [replyBody, setReplyBody] = useState('');
+  const [showReplyForm, setShowReplyForm] = useState(false);
 
   // Static list pane width
-  const [listPaneWidth] = useState(480);
+  const [listPaneWidth, setListPaneWidth] = useState(() => {
+    const savedWidth = localStorage.getItem('synchro_mailListWidth');
+    return savedWidth ? parseInt(savedWidth, 10) : 480;
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const splitterRef = useRef(null);
+
+  // Handle splitter drag
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isDragging) return;
+
+      const sidebar = document.querySelector('[data-mail-sidebar]');
+      if (!sidebar) return;
+
+      const sidebarRect = sidebar.getBoundingClientRect();
+      const minWidth = 320;
+      const maxWidth = 600;
+
+      let newWidth = e.clientX - sidebarRect.right;
+      newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+      setListPaneWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        setIsDragging(false);
+        localStorage.setItem('synchro_mailListWidth', listPaneWidth.toString());
+      }
+    };
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging, listPaneWidth]);
 
   // Selected email for the detail pane; null shows the "no email selected" state
   const selectedEmail = selectedEmailId ? emails.find(e => e.id === selectedEmailId) || null : null;
@@ -105,6 +151,7 @@ export default function MailView({
     const updated = emails.map(m => m.id === selectedEmail.id ? { ...m, replies: updatedThread } : m);
     onUpdateEmails(updated);
     setReplyBody('');
+    setShowReplyForm(false);
     onTriggerNotification('Reply sent successfully!');
   };
 
@@ -143,9 +190,9 @@ export default function MailView({
   };
 
   return (
-    <div style={styles.container} className="animate-fade-in">
+    <div style={styles.container} className="animate-fade-in" data-mail-container>
       {/* 1st Pane: Sidebar navigation */}
-      <div style={styles.sidebar}>
+      <div style={styles.sidebar} data-mail-sidebar>
         <button style={styles.composeBtn} onClick={() => onOpenCompose()}>
           <MailIcon size={16} style={{ marginRight: '8px' }} />
           New Mail
@@ -327,6 +374,13 @@ export default function MailView({
         </div>
       </div>
 
+      {/* Resizable Splitter */}
+      <div
+        ref={splitterRef}
+        style={styles.splitter}
+        onMouseDown={() => setIsDragging(true)}
+      />
+
       {/* 3rd Pane: Email reader detail */}
       <div style={styles.detailPane}>
         {selectedEmail ? (
@@ -379,11 +433,11 @@ export default function MailView({
             </div>
 
             {/* Email Body */}
-            <div style={styles.detailBody}>
-              {selectedEmail.body.split('\n').map((para, i) => (
-                <p key={i} style={styles.paragraph}>{para}</p>
-              ))}
-            </div>
+            <div
+              className="email-html-content"
+              style={styles.detailBody}
+              dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
+            />
 
             {/* Attachments */}
             {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
@@ -416,22 +470,43 @@ export default function MailView({
               </div>
             )}
 
-            {/* Quick Reply Form */}
-            <form onSubmit={handleReplySubmit} style={styles.replyForm}>
-              <textarea
-                placeholder={`Reply to ${selectedEmail.senderName || selectedEmail.sender}...`}
-                value={replyBody}
-                onChange={(e) => setReplyBody(e.target.value)}
-                style={styles.replyTextarea}
-                required
-              />
-              <div style={styles.replyFormActions}>
-                <button type="submit" style={styles.replySendBtn}>
-                  <ReplyIcon size={14} style={{ marginRight: '6px' }} />
-                  Send Reply
-                </button>
-              </div>
-            </form>
+            {/* Quick Reply Button/Form */}
+            {!showReplyForm ? (
+              <button
+                style={styles.replyButton}
+                onClick={() => setShowReplyForm(true)}
+              >
+                <ReplyIcon size={14} style={{ marginRight: '6px' }} />
+                Reply
+              </button>
+            ) : (
+              <form onSubmit={handleReplySubmit} style={styles.replyForm}>
+                <textarea
+                  placeholder={`Reply to ${selectedEmail.senderName || selectedEmail.sender}...`}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  style={styles.replyTextarea}
+                  required
+                  autoFocus
+                />
+                <div style={styles.replyFormActions}>
+                  <button type="submit" style={styles.replySendBtn}>
+                    <ReplyIcon size={14} style={{ marginRight: '6px' }} />
+                    Send Reply
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.replyCancelBtn}
+                    onClick={() => {
+                      setShowReplyForm(false);
+                      setReplyBody('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         ) : (
           <div style={styles.noEmailSelected}>
@@ -734,7 +809,8 @@ const styles = {
     fontSize: '14px',
     lineHeight: '1.6',
     color: 'var(--text-primary)',
-    whiteSpace: 'pre-wrap',
+    overflow: 'auto',
+    wordWrap: 'break-word',
   },
   paragraph: {
     margin: '0 0 16px 0',
@@ -840,6 +916,27 @@ const styles = {
   replyFormActions: {
     display: 'flex',
     justifyContent: 'flex-end',
+    gap: '8px',
+  },
+  replyButton: {
+    padding: '10px 20px',
+    borderRadius: '6px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-primary)',
+    fontSize: '13px',
+    fontWeight: '600',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: '20px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      backgroundColor: 'var(--primary)',
+      color: '#ffffff',
+      borderColor: 'var(--primary)',
+    }
   },
   replySendBtn: {
     padding: '8px 16px',
@@ -851,8 +948,24 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     transition: 'background-color 0.2s',
+    cursor: 'pointer',
     ':hover': {
       backgroundColor: 'var(--accent-hover)',
+    }
+  },
+  replyCancelBtn: {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--border-color)',
+    color: 'var(--text-secondary)',
+    fontSize: '12.5px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    ':hover': {
+      backgroundColor: 'var(--bg-tertiary)',
+      color: 'var(--text-primary)',
     }
   },
   paginationContainer: {
@@ -890,6 +1003,19 @@ const styles = {
       opacity: 0.4,
       cursor: 'not-allowed',
     },
+  },
+  splitter: {
+    width: '4px',
+    cursor: 'col-resize',
+    backgroundColor: 'transparent',
+    borderLeft: '1px solid var(--border-color)',
+    borderRight: '1px solid var(--border-color)',
+    transition: 'background-color 0.2s',
+    position: 'relative',
+    flexShrink: 0,
+    ':hover': {
+      backgroundColor: 'var(--primary)',
+    }
   },
   paginationInfo: {
     padding: '0 12px',
