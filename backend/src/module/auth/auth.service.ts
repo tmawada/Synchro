@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -269,6 +269,77 @@ export class AuthService {
   }
 
   /**
+   * Mark an email as read in Gmail by removing its UNREAD label.
+   * Used so that reading a message in Synchro syncs the read state back to Gmail.
+   */
+  async markGoogleEmailRead(userId: string, emailId: string) {
+    // Frontend ids are prefixed with `gmail_`; the Gmail API wants the raw id
+    const gmailId = emailId.replace(/^gmail_/, '');
+    if (!gmailId) {
+      throw new BadRequestException('Invalid email id');
+    }
+
+    const account = await this.prisma.account.findFirst({
+      where: { userId, provider: 'google' },
+    });
+
+    if (!account || (!account.accessToken && !account.refreshToken)) {
+      throw new BadRequestException('No connected Google account');
+    }
+
+    let token = account.accessToken;
+    if (!token && account.refreshToken) {
+      token = await this.refreshGoogleToken(account);
+    }
+    if (!token) {
+      throw new BadRequestException('No valid Google token');
+    }
+
+    const modify = async (accessToken: string) =>
+      fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailId}/modify`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ removeLabelIds: ['UNREAD'] }),
+        },
+      );
+
+    let res = await modify(token);
+    // Retry once with a refreshed token on 401
+    if (res.status === 401 && account.refreshToken) {
+      token = await this.refreshGoogleToken(account);
+      if (!token) throw new BadRequestException('Failed to refresh Google token');
+      res = await modify(token);
+    }
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => '');
+      console.warn(`Gmail modify failed (${res.status}):`, errorText);
+
+      // Surface the common, actionable failures instead of a generic 400
+      if (res.status === 403) {
+        throw new ForbiddenException(
+          'Google denied the request. The account is likely connected with the ' +
+            'read-only Gmail scope — sign out and sign in with Google again to grant write access.',
+        );
+      }
+      if (res.status === 401) {
+        throw new UnauthorizedException('Google token expired or revoked. Please sign in again.');
+      }
+      if (res.status === 404) {
+        throw new NotFoundException('Email not found in Gmail — it may have been deleted.');
+      }
+      throw new BadRequestException('Failed to mark email as read in Gmail');
+    }
+
+    return { success: true };
+  }
+
+  /**
    * Helper to parse full text/plain or text/html email body from Gmail payload.
    */
   private extractGmailBody(payload: any): string {
@@ -340,11 +411,17 @@ export class AuthService {
       // Initial delay for rate limiting
       await new Promise(resolve => setTimeout(resolve, 300));
 
+      // Restrict to the Primary inbox tab, excluding Social and Promotions.
+      // Let Google's account security/sign-in alerts through even when Gmail
+      // sorts them into Updates.
+      const baseQuery = 'in:inbox -category:promotions -category:social {-category:updates from:no-reply@accounts.google.com from:account-security-noreply@google.com}';
+
       // Server-side subject search using Gmail's native `subject:` operator
       // (case-insensitive, quoted phrase). Escape backslashes/quotes first.
+      // The primary-inbox filter is always applied alongside the search.
       const qParam = search
-        ? `subject:"${search.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-        : '';
+        ? `subject:"${search.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" ${baseQuery}`
+        : baseQuery;
 
       const listUrlFor = (pageToken?: string) => {
         const params = new URLSearchParams({ maxResults: String(fetchLimit) });

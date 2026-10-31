@@ -6,6 +6,7 @@ import {
   Req,
   Res,
   Query,
+  Param,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -99,5 +100,17 @@ export class AuthController {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 50;
     return this.authService.getGoogleEmails(user.id, limitNum, pageNum, q?.trim() || undefined);
+  }
+
+  /**
+   * POST /auth/emails/:id/read
+   * Mark an email as read in Gmail (removes the UNREAD label) so that
+   * reading a message in Synchro is reflected in the user's Gmail account.
+   */
+  @Post('emails/:id/read')
+  @UseGuards(JwtAuthGuard)
+  async markEmailRead(@Req() req: Request, @Param('id') id: string) {
+    const user = req.user as { id: string };
+    return this.authService.markGoogleEmailRead(user.id, id);
   }
 }

@@ -17,7 +17,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         'GOOGLE_CALLBACK_URL',
         'http://localhost:3030/auth/google/callback',
       ),
-      scope: ['email', 'profile', 'https://www.googleapis.com/auth/gmail.readonly'],
+      // gmail.modify is required to sync read state (messages.modify).
+      // It supersedes gmail.readonly, which cannot change labels.
+      scope: ['email', 'profile', 'https://www.googleapis.com/auth/gmail.modify'],
       accessType: 'offline',
       prompt: 'consent',
     } as any);
