@@ -403,28 +403,32 @@ export default function TasksView({
         <div style={styles.navSection}>
           <div style={styles.navHeader}>SMART LISTS</div>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'all' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'all' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('all')}
           >
             <span>All Tasks</span>
             <span style={styles.countBadge}>{getCount('all')}</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'today' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'today' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('today')}
           >
             <span>Due Today</span>
             <span style={styles.countBadge}>{getCount('today')}</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'high' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'high' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('high')}
           >
             <span>High Priority</span>
             <span style={styles.countBadge}>{getCount('high')}</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'completed' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'completed' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('completed')}
           >
             <span>Completed</span>
@@ -435,21 +439,24 @@ export default function TasksView({
         <div style={styles.navSection}>
           <div style={styles.navHeader}>CATEGORIES</div>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'list_work' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'list_work' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('list_work')}
           >
             <span>Work Projects</span>
             <span style={styles.countBadge}>{getCount('list_work')}</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'list_personal' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'list_personal' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('list_personal')}
           >
             <span>Personal Life</span>
             <span style={styles.countBadge}>{getCount('list_personal')}</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFilter === 'list_routine' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFilter === 'list_routine' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFilter('list_routine')}
           >
             <span>Routine / Habits</span>

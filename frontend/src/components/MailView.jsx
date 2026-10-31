@@ -154,7 +154,8 @@ export default function MailView({
         <div style={styles.navSection}>
           <div style={styles.navHeader}>FOLDERS</div>
           <button
-            style={{ ...styles.navItem, ...(selectedFolder === 'inbox' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFolder === 'inbox' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFolder('inbox')}
           >
             <span>Inbox</span>
@@ -163,19 +164,22 @@ export default function MailView({
             )}
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFolder === 'starred' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFolder === 'starred' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFolder('starred')}
           >
             <span>Starred</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFolder === 'sent' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFolder === 'sent' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFolder('sent')}
           >
             <span>Sent</span>
           </button>
           <button
-            style={{ ...styles.navItem, ...(selectedFolder === 'trash' ? styles.navItemActive : {}) }}
+            className={`nav-item ${selectedFolder === 'trash' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setSelectedFolder('trash')}
           >
             <span>Trash</span>
@@ -185,7 +189,8 @@ export default function MailView({
         <div style={styles.navSection}>
           <div style={styles.navHeader}>CONNECTED INBOXES</div>
           <button
-            style={{ ...styles.navItem, ...(activeAccountFilter === 'all' ? styles.navItemActive : {}) }}
+            className={`nav-item ${activeAccountFilter === 'all' ? 'nav-item-active' : ''}`}
+            style={styles.navItem}
             onClick={() => setActiveAccountFilter('all')}
           >
             <MailIcon size={14} />
@@ -197,7 +202,8 @@ export default function MailView({
             return (
               <button
                 key={acc.id}
-                style={{ ...styles.navItem, ...(activeAccountFilter === acc.id ? styles.navItemActive : {}) }}
+                className={`nav-item ${activeAccountFilter === acc.id ? 'nav-item-active' : ''}`}
+                style={styles.navItem}
                 onClick={() => setActiveAccountFilter(acc.id)}
               >
                 <Icon size={14} />
@@ -241,6 +247,7 @@ export default function MailView({
               return (
                 <div
                   key={mail.id}
+                  className="email-card"
                   style={{
                     ...styles.emailCard,
                     ...(selectedEmailId === mail.id ? styles.emailCardActive : {}),
@@ -269,12 +276,14 @@ export default function MailView({
                     </span>
                     <div style={styles.cardActions}>
                       <button
+                        className="email-card-action-btn"
                         style={{ ...styles.cardActionBtn, color: mail.isStarred ? '#fbbf24' : 'var(--text-muted)' }}
                         onClick={(e) => handleToggleStar(mail.id, e)}
                       >
                         <StarIcon size={14} />
                       </button>
                       <button
+                        className="email-card-action-btn"
                         style={styles.cardActionBtn}
                         onClick={(e) => handleDeleteEmail(mail.id, e)}
                       >

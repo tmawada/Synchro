@@ -197,6 +197,75 @@ body {
   background-color: rgba(2, 151, 222, 0.15) !important;
 }
 
+/* Email card hover effects */
+.email-card {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.email-card:hover {
+  background-color: rgba(2, 151, 222, 0.12) !important;
+  transform: translateX(2px);
+}
+
+/* Task card hover effects */
+.task-card-clickable {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.task-card-clickable:hover {
+  background-color: var(--bg-card-hover) !important;
+  border-color: var(--border-color-active) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.email-card-action-btn {
+  transition: all 0.2s ease;
+}
+.email-card-action-btn:hover {
+  color: var(--text-primary) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Nav item hover (mail folders, accounts, task lists) */
+.nav-item {
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    padding-left 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+.nav-item:hover:not(.nav-item-active) {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text-primary) !important;
+  padding-left: 18px !important;
+}
+.nav-item::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background-color: var(--primary);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.4);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.nav-item:hover:not(.nav-item-active)::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+.nav-item-active {
+  position: relative;
+  background-color: rgba(2, 151, 222, 0.1) !important;
+}
+.nav-item-active::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+.nav-item:active {
+  transform: scale(0.985);
+}
+
 /* Task card 3-dot menu */
 .task-menu-btn {
   display: flex;
