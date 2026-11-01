@@ -1,8 +1,10 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, InternalServerErrorException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from '../prisma/prisma.service';
+import { USER_REPOSITORY, ACCOUNT_REPOSITORY } from '../database/database.module';
+import { IUserRepository } from '../database/interfaces/user-repository.interface';
+import { IAccountRepository } from '../database/interfaces/account-repository.interface';
 
 interface GoogleProfile {
   googleId: string;
@@ -16,7 +18,8 @@ interface GoogleProfile {
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
+    @Inject(USER_REPOSITORY) private userRepo: IUserRepository,
+    @Inject(ACCOUNT_REPOSITORY) private accountRepo: IAccountRepository,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -27,34 +30,25 @@ export class AuthService {
    */
   async register(email: string, password: string, name?: string) {
     // Check if a user with this email already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+    const existingUser = await this.userRepo.findByEmail(email.toLowerCase());
 
     if (existingUser) {
       // If user exists and already has an email provider, reject
-      const emailAccount = await this.prisma.account.findFirst({
-        where: { userId: existingUser.id, provider: 'email' },
-      });
+      const emailAccount = await this.accountRepo.findByUserIdAndProvider(existingUser.id, 'email');
       if (emailAccount) {
         throw new ConflictException('An account with this email already exists.');
       }
 
       // User exists (e.g., from Google OAuth) but no email provider — link it
       const hashedPassword = await bcrypt.hash(password, 12);
-      await this.prisma.user.update({
-        where: { id: existingUser.id },
-        data: {
-          password: hashedPassword,
-          name: name || existingUser.name,
-        },
+      await this.userRepo.update(existingUser.id, {
+        password: hashedPassword,
+        name: name || existingUser.name,
       });
-      await this.prisma.account.create({
-        data: {
-          provider: 'email',
-          providerAccountId: email.toLowerCase(),
-          userId: existingUser.id,
-        },
+      await this.accountRepo.create({
+        provider: 'email',
+        providerAccountId: email.toLowerCase(),
+        userId: existingUser.id,
       });
 
       return this.issueJwt(existingUser);
@@ -62,18 +56,13 @@ export class AuthService {
 
     // New user — create from scratch
     const hashedPassword = await bcrypt.hash(password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        name: name || email.split('@')[0],
-        password: hashedPassword,
-        accounts: {
-          create: {
-            provider: 'email',
-            providerAccountId: email.toLowerCase(),
-          },
-        },
-      },
+    const user = await this.userRepo.create({
+      email: email.toLowerCase(),
+      name: name || email.split('@')[0],
+      password: hashedPassword,
+    }, {
+      provider: 'email',
+      providerAccountId: email.toLowerCase(),
     });
 
     return this.issueJwt(user);
@@ -83,9 +72,7 @@ export class AuthService {
    * Validate email/password credentials for login.
    */
   async validateEmailLogin(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+    const user = await this.userRepo.findByEmail(email.toLowerCase());
 
     if (!user || !user.password) {
       throw new UnauthorizedException(
@@ -109,74 +96,61 @@ export class AuthService {
     const { googleId, email, name, avatarUrl, accessToken, refreshToken } = profile;
 
     // 1. Check if this Google account is already linked
-    const existingAccount = await this.prisma.account.findUnique({
-      where: {
-        provider_providerAccountId: {
-          provider: 'google',
-          providerAccountId: googleId,
-        },
-      },
-      include: { user: true },
-    });
+    const existingAccount = await this.accountRepo.findByProviderAccountId('google', googleId, true);
 
     if (existingAccount) {
       // Update tokens if provided
       if (accessToken || refreshToken) {
-        await this.prisma.account.update({
-          where: { id: existingAccount.id },
-          data: {
-            accessToken: accessToken || existingAccount.accessToken,
-            refreshToken: refreshToken || existingAccount.refreshToken,
-          },
+        await this.accountRepo.update(existingAccount.id, {
+          accessToken: accessToken || existingAccount.accessToken,
+          refreshToken: refreshToken || existingAccount.refreshToken,
         });
+      }
+      if (!existingAccount.user) {
+        throw new UnauthorizedException('Account has no associated user');
       }
       return this.issueJwt(existingAccount.user);
     }
 
     // 2. Check if a user with the same email already exists (auto-link)
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-    });
+    const existingUser = await this.userRepo.findByEmail(email.toLowerCase());
 
     if (existingUser) {
       // Link Google provider to existing user
-      await this.prisma.account.create({
-        data: {
-          provider: 'google',
-          providerAccountId: googleId,
-          accessToken,
-          refreshToken,
-          userId: existingUser.id,
-        },
+      await this.accountRepo.create({
+        provider: 'google',
+        providerAccountId: googleId,
+        accessToken,
+        refreshToken,
+        userId: existingUser.id,
       });
 
       // Update avatar if not set
       if (!existingUser.avatarUrl && avatarUrl) {
-        await this.prisma.user.update({
-          where: { id: existingUser.id },
-          data: { avatarUrl },
-        });
+        await this.userRepo.update(existingUser.id, { avatarUrl });
       }
 
       return this.issueJwt(existingUser);
     }
 
     // 3. Brand new user — create User + Account
-    const newUser = await this.prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        name: name || email.split('@')[0],
-        avatarUrl,
-        accounts: {
-          create: {
-            provider: 'google',
-            providerAccountId: googleId,
-            accessToken,
-            refreshToken,
-          },
-        },
-      },
+    const newUser = await this.userRepo.create({
+      email: email.toLowerCase(),
+      name: name || email.split('@')[0],
+      avatarUrl,
+    }, {
+      provider: 'google',
+      providerAccountId: googleId,
     });
+
+    // Update the account with tokens since create() doesn't support them yet
+    const newAccount = await this.accountRepo.findByProviderAccountId('google', googleId);
+    if (newAccount && (accessToken || refreshToken)) {
+      await this.accountRepo.update(newAccount.id, {
+        accessToken,
+        refreshToken,
+      });
+    }
 
     return this.issueJwt(newUser);
   }
@@ -185,18 +159,7 @@ export class AuthService {
    * Get user profile by ID.
    */
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        accounts: {
-          select: {
-            id: true,
-            provider: true,
-            providerAccountId: true,
-          },
-        },
-      },
-    });
+    const user = await this.userRepo.findById(userId, true);
 
     if (!user) {
       throw new UnauthorizedException('User not found.');
@@ -227,7 +190,7 @@ export class AuthService {
     };
   }
 
-  private async refreshGoogleToken(account: { id: string; refreshToken: string | null }) {
+  private async refreshGoogleToken(account: { id: string; refreshToken?: string | null }) {
     if (!account.refreshToken) {
       console.error(`[GoogleAuth] No refresh token available for account ${account.id}. User needs to re-authenticate with Google.`);
       return null;
@@ -255,10 +218,7 @@ export class AuthService {
       }
       const data = (await res.json()) as { access_token?: string };
       if (data.access_token) {
-        await this.prisma.account.update({
-          where: { id: account.id },
-          data: { accessToken: data.access_token },
-        });
+        await this.accountRepo.update(account.id, { accessToken: data.access_token });
         return data.access_token;
       }
     } catch (err) {
@@ -279,9 +239,7 @@ export class AuthService {
       throw new BadRequestException('Invalid email id');
     }
 
-    const account = await this.prisma.account.findFirst({
-      where: { userId, provider: 'google' },
-    });
+    const account = await this.accountRepo.findByUserIdAndProvider(userId, 'google');
 
     if (!account || (!account.accessToken && !account.refreshToken)) {
       throw new BadRequestException('No connected Google account');
@@ -497,9 +455,7 @@ export class AuthService {
    * Includes rate limiting to stay under Google API quotas.
    */
   async getGoogleEmails(userId: string, limit = 10, page = 1, search?: string) {
-    const account = await this.prisma.account.findFirst({
-      where: { userId, provider: 'google' },
-    });
+    const account = await this.accountRepo.findByUserIdAndProvider(userId, 'google');
 
     if (!account || (!account.accessToken && !account.refreshToken)) {
       return { emails: [], totalPages: 0, page: 1 };

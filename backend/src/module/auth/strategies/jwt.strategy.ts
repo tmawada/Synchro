@@ -1,14 +1,15 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, ExtractJwt } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../prisma/prisma.service';
+import { IUserRepository } from '../../database/interfaces/user-repository.interface';
+import { USER_REPOSITORY } from '../../database/database.module';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     private configService: ConfigService,
-    private prisma: PrismaService,
+    @Inject(USER_REPOSITORY) private userRepository: IUserRepository,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -18,9 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: { sub: string; email: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
+    const user = await this.userRepository.findById(payload.sub);
 
     if (!user) {
       throw new UnauthorizedException('User no longer exists.');

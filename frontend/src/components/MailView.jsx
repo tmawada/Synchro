@@ -66,7 +66,14 @@ export default function MailView({
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
   const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [replyBody, setReplyBody] = useState('');
-  const [showReplyForm, setShowReplyForm] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('synchro_isSidebarCollapsed');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('synchro_isSidebarCollapsed', isSidebarCollapsed.toString());
+  }, [isSidebarCollapsed]);
 
   // Static list pane width
   const [listPaneWidth, setListPaneWidth] = useState(() => {
@@ -220,56 +227,98 @@ export default function MailView({
   return (
     <div style={styles.container} className="animate-fade-in" data-mail-container>
       {/* 1st Pane: Sidebar navigation */}
-      <div style={styles.sidebar} data-mail-sidebar>
-        <button style={styles.composeBtn} onClick={() => onOpenCompose()}>
-          <MailIcon size={16} style={{ marginRight: '8px' }} />
-          New Mail
+      <div style={{...styles.sidebar, width: isSidebarCollapsed ? '70px' : '280px', minWidth: isSidebarCollapsed ? '70px' : '200px'}} data-mail-sidebar>
+        {/* Toggle Sidebar Button (Burger Icon) */}
+        <button
+          style={{
+            padding: '10px',
+            cursor: 'pointer',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
+            marginBottom: '8px',
+          }}
+          onClick={() => {
+            const newState = !isSidebarCollapsed;
+            setIsSidebarCollapsed(newState);
+            localStorage.setItem('synchro_isSidebarCollapsed', newState.toString());
+          }}
+        >
+          ☰
+        </button>
+
+        <button
+          style={{
+            ...styles.composeBtn,
+            padding: isSidebarCollapsed ? '12px' : '12px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: isSidebarCollapsed ? '0' : '8px',
+          }}
+          onClick={() => onOpenCompose()}
+        >
+          <MailIcon size={16} />
+          {!isSidebarCollapsed && 'New Mail'}
         </button>
 
         <div style={styles.navSection}>
-          <div style={styles.navHeader}>FOLDERS</div>
+          <div style={styles.navHeader}>{isSidebarCollapsed ? '' : 'FOLDERS'}</div>
           <button
             className={`nav-item ${selectedFolder === 'inbox' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{ ...styles.navItem, justifyContent: 'flex-start' }}
             onClick={() => setSelectedFolder('inbox')}
+            title="Inbox"
           >
-            <span>Inbox</span>
-            {getUnreadCount('inbox') > 0 && (
-              <span className="badge badge-primary">{getUnreadCount('inbox')}</span>
+            <MailIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Inbox</span>}
+            {!isSidebarCollapsed && getUnreadCount('inbox') > 0 && (
+              <span className="badge badge-primary" style={{ marginLeft: 'auto' }}>{getUnreadCount('inbox')}</span>
             )}
           </button>
           <button
             className={`nav-item ${selectedFolder === 'starred' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{ ...styles.navItem, justifyContent: 'flex-start' }}
             onClick={() => setSelectedFolder('starred')}
+            title="Starred"
           >
-            <span>Starred</span>
+            <StarIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Starred</span>}
           </button>
           <button
             className={`nav-item ${selectedFolder === 'sent' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{ ...styles.navItem, justifyContent: 'flex-start' }}
             onClick={() => setSelectedFolder('sent')}
+            title="Sent"
           >
-            <span>Sent</span>
+            <ClockIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Sent</span>}
           </button>
           <button
             className={`nav-item ${selectedFolder === 'trash' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{ ...styles.navItem, justifyContent: 'flex-start' }}
             onClick={() => setSelectedFolder('trash')}
+            title="Trash"
           >
-            <span>Trash</span>
+            <TrashIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Trash</span>}
           </button>
         </div>
 
         <div style={styles.navSection}>
-          <div style={styles.navHeader}>CONNECTED INBOXES</div>
+          <div style={styles.navHeader}>{isSidebarCollapsed ? '' : 'CONNECTED INBOXES'}</div>
           <button
             className={`nav-item ${activeAccountFilter === 'all' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{ ...styles.navItem, justifyContent: 'flex-start' }}
             onClick={() => setActiveAccountFilter('all')}
+            title="All Inboxes"
           >
-            <MailIcon size={14} />
-            <span style={{ marginLeft: '8px' }}>All Inboxes</span>
+            <MailIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>All Inboxes</span>}
           </button>
 
           {connectedAccounts.map((acc) => {
@@ -278,13 +327,16 @@ export default function MailView({
               <button
                 key={acc.id}
                 className={`nav-item ${activeAccountFilter === acc.id ? 'nav-item-active' : ''}`}
-                style={styles.navItem}
+                style={{ ...styles.navItem, justifyContent: 'flex-start' }}
                 onClick={() => setActiveAccountFilter(acc.id)}
+                title={acc.email}
               >
-                <Icon size={14} />
-                <span style={{ marginLeft: '8px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {acc.email}
-                </span>
+                <Icon size={16} />
+                {!isSidebarCollapsed && (
+                  <span style={{ marginLeft: '8px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {acc.email}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -338,17 +390,13 @@ export default function MailView({
                     }
                   }}
                 >
-                  <div style={styles.emailCardHeader}>
+                  <div style={styles.emailCardRow1}>
                     <span style={styles.emailSender}>{mail.senderName || mail.sender}</span>
+                    <span style={styles.emailSubject}>{mail.subject}</span>
                     <span style={styles.emailTime}>{mail.date}</span>
                   </div>
-                  <div style={styles.emailSubject}>{mail.subject}</div>
-                  <div style={styles.emailPreview}>{getPlainTextSnippet(mail.snippet || mail.body)}</div>
-
-                  <div style={styles.emailCardFooter}>
-                    <span style={styles.emailAccountBadge} className={`text-${provider}`}>
-                      {mail.account}
-                    </span>
+                  <div style={styles.emailCardRow2}>
+                    <div style={styles.emailPreview}>{getPlainTextSnippet(mail.snippet || mail.body)}</div>
                     <div style={styles.cardActions}>
                       <button
                         className="email-card-action-btn"
@@ -449,7 +497,7 @@ export default function MailView({
             <div style={styles.divider} />
 
             {/* Email Meta */}
-            <div style={styles.emailMetaRow}>
+            <div style={styles.emailMetaRow} className="glass-panel" style={{...styles.emailMetaRow, ...styles.emailMetaContainer}}>
               <div style={styles.senderAvatar}>
                 {(selectedEmail.senderName || selectedEmail.sender)[0].toUpperCase()}
               </div>
@@ -463,7 +511,7 @@ export default function MailView({
             {/* Email Body */}
             <div
               className="email-html-content"
-              style={styles.detailBody}
+              style={{ ...styles.detailBody, width: '100%', maxWidth: '800px', margin: '0 auto' }}
               dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(selectedEmail.body) }}
             />
 
@@ -685,19 +733,19 @@ const styles = {
   emailCardRead: {
     borderLeftColor: 'var(--mail-read-border)',
   },
-  emailCardHeader: {
+  emailCardRow1: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: '12px',
   },
   emailSender: {
     fontSize: '13.5px',
     fontWeight: '600',
     color: 'var(--text-primary)',
-  },
-  emailTime: {
-    fontSize: '11px',
-    color: 'var(--text-muted)',
+    minWidth: '120px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   emailSubject: {
     fontSize: '13px',
@@ -706,16 +754,29 @@ const styles = {
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
+    flexGrow: 1,
+  },
+  emailTime: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    minWidth: '50px',
+    textAlign: 'right',
+  },
+  emailCardRow2: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
   },
   emailPreview: {
     fontSize: '12px',
     color: 'var(--text-secondary)',
-    lineHeight: '1.4',
-    display: '-webkit-box',
-    WebkitLineClamp: '2',
-    WebkitBoxOrient: 'vertical',
+    whiteSpace: 'nowrap',
     overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    flexGrow: 1,
   },
+
   emailCardFooter: {
     display: 'flex',
     alignItems: 'center',
