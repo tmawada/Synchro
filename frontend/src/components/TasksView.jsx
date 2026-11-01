@@ -101,6 +101,15 @@ export default function TasksView({
   const [ticktickToken, setTicktickToken] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
 
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('synchro_tasksSidebarCollapsed');
+    return saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('synchro_tasksSidebarCollapsed', isSidebarCollapsed.toString());
+  }, [isSidebarCollapsed]);
+
   // Edit modal state
   const [editingTask, setEditingTask] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -399,78 +408,114 @@ export default function TasksView({
   return (
     <div style={styles.container} className="animate-fade-in">
       {/* Sidebar: Filters & Categories */}
-      <div style={styles.sidebar}>
+      <div style={{...styles.sidebar, width: isSidebarCollapsed ? '70px' : '220px', minWidth: isSidebarCollapsed ? '70px' : '200px'}} data-task-sidebar>
+        {/* Toggle Sidebar Button (Burger Icon) */}
+        <button
+          style={{
+            padding: '10px',
+            cursor: 'pointer',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
+            marginBottom: '8px',
+          }}
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        >
+          ☰
+        </button>
+
         <div style={styles.navSection}>
-          <div style={styles.navHeader}>SMART LISTS</div>
+          <div style={styles.navHeader}>{isSidebarCollapsed ? '' : 'SMART LISTS'}</div>
           <button
             className={`nav-item ${selectedFilter === 'all' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('all')}
+            title="All Tasks"
           >
-            <span>All Tasks</span>
-            <span style={styles.countBadge}>{getCount('all')}</span>
+            <CheckSquareIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>All Tasks</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('all')}</span>}
           </button>
           <button
             className={`nav-item ${selectedFilter === 'today' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('today')}
+            title="Due Today"
           >
-            <span>Due Today</span>
-            <span style={styles.countBadge}>{getCount('today')}</span>
+            <CalendarIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Due Today</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('today')}</span>}
           </button>
           <button
             className={`nav-item ${selectedFilter === 'high' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('high')}
+            title="High Priority"
           >
-            <span>High Priority</span>
-            <span style={styles.countBadge}>{getCount('high')}</span>
+            <InfoIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>High Priority</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('high')}</span>}
           </button>
           <button
             className={`nav-item ${selectedFilter === 'completed' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('completed')}
+            title="Completed"
           >
-            <span>Completed</span>
-            <span style={styles.countBadge}>{getCount('completed')}</span>
+            <CheckSquareIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Completed</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('completed')}</span>}
           </button>
         </div>
 
         <div style={styles.navSection}>
-          <div style={styles.navHeader}>CATEGORIES</div>
+          <div style={styles.navHeader}>{isSidebarCollapsed ? '' : 'CATEGORIES'}</div>
           <button
             className={`nav-item ${selectedFilter === 'list_work' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('list_work')}
+            title="Work Projects"
           >
-            <span>Work Projects</span>
-            <span style={styles.countBadge}>{getCount('list_work')}</span>
+            <MailIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Work Projects</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_work')}</span>}
           </button>
           <button
             className={`nav-item ${selectedFilter === 'list_personal' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('list_personal')}
+            title="Personal Life"
           >
-            <span>Personal Life</span>
-            <span style={styles.countBadge}>{getCount('list_personal')}</span>
+            <MailIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Personal Life</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_personal')}</span>}
           </button>
           <button
             className={`nav-item ${selectedFilter === 'list_routine' ? 'nav-item-active' : ''}`}
-            style={styles.navItem}
+            style={{...styles.navItem, justifyContent: 'flex-start'}}
             onClick={() => setSelectedFilter('list_routine')}
+            title="Routine / Habits"
           >
-            <span>Routine / Habits</span>
-            <span style={styles.countBadge}>{getCount('list_routine')}</span>
+            <MailIcon size={16} />
+            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Routine / Habits</span>}
+            {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_routine')}</span>}
           </button>
         </div>
 
         {/* TickTick Integration */}
         {ticktickConnected && !ticktickLoading ? (
           <div style={styles.ticktickConnected}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
-              <span style={{ ...styles.prioTag, color: 'var(--text-primary)', fontSize: '11px', padding: '2px 6px', borderRadius: '6px' }}>
-                <LinkIcon size={12} style={{ marginRight: '4px' }} /> Connected
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'space-between', width: '100%', marginBottom: '8px' }}>
+              {!isSidebarCollapsed ? (
+                <span style={{ ...styles.prioTag, color: 'var(--text-primary)', fontSize: '11px', padding: '2px 6px', borderRadius: '6px' }}>
+                  <LinkIcon size={12} style={{ marginRight: '4px' }} /> Connected
+                </span>
+              ) : (
+                <LinkIcon size={12} style={{ color: 'var(--text-muted)' }} />
+              )}
               <button
                 style={styles.refreshBtn}
                 onClick={onRefreshTickTick}
@@ -480,31 +525,34 @@ export default function TasksView({
               </button>
             </div>
             <button
-              style={styles.disconnectBtn}
+              style={{ ...styles.disconnectBtn, ...(isSidebarCollapsed ? { padding: '8px' } : {}) }}
               onClick={onDisconnectTickTick}
               title="Disconnect TickTick"
             >
-              <TrashIcon size={12} style={{ marginRight: '6px' }} /> Disconnect Account
+              <TrashIcon size={12} style={{ marginRight: isSidebarCollapsed ? '0' : '6px' }} />
+              {!isSidebarCollapsed && 'Disconnect Account'}
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isSidebarCollapsed ? 'center' : 'flex-start', gap: '8px', marginTop: '8px' }}>
             <button
               style={{ ...styles.navItem, padding: '6px 12px', fontSize: '12px' }}
               onClick={() => setShowTickTickModal(true)}
               title="Connect TickTick"
             >
-              <SettingsIcon size={14} /> Connect
+              <SettingsIcon size={14} /> {!isSidebarCollapsed && 'Connect'}
             </button>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Sync your TickTick tasks
-            </span>
+            {!isSidebarCollapsed && (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                Sync your TickTick tasks
+              </span>
+            )}
           </div>
         )}
         {/* TickTick sync status when loading */}
         {ticktickLoading && (
-          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
-            <span>Syncing TickTick tasks...</span>
+          <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--text-muted)', textAlign: isSidebarCollapsed ? 'center' : 'left' }}>
+            {isSidebarCollapsed ? <RefreshIcon size={12} /> : <span>Syncing TickTick tasks...</span>}
           </div>
         )}
       </div>

@@ -3,9 +3,6 @@ services:
     build:
       context: ./backend
     container_name: synchro-backend
-    # Host networking so the backend can reach the PostgreSQL server through
-    # the FortiClient VPN (bridge NAT traffic is blocked by the VPN client)
-    # network_mode: host
     ports:
       - "3030:3030"
     volumes:
