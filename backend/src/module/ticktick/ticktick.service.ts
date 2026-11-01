@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma/prisma.service';
+import { ACCOUNT_REPOSITORY } from '../database/database.module';
+import { IAccountRepository } from '../database/interfaces/account-repository.interface';
 
 export interface TickTickTask {
   id: string;
@@ -50,16 +51,14 @@ export class TickTickService {
 
   constructor(
     private configService: ConfigService,
-    private prisma: PrismaService,
+    @Inject(ACCOUNT_REPOSITORY) private accountRepo: IAccountRepository,
   ) {}
 
   /**
    * Get the stored TickTick access token for a user.
    */
   async getAccessToken(userId: string): Promise<string | null> {
-    const account = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
+    const account = await this.accountRepo.findByUserIdAndProvider(userId, 'ticktick');
     return account?.ticktickAccessToken || null;
   }
 
@@ -475,33 +474,24 @@ export class TickTickService {
    * Called when user connects TickTick account.
    */
   async setTickTickToken(userId: string, accessToken: string, refreshToken?: string, ticktickId?: string) {
-    const existingAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
+    const existingAccount = await this.accountRepo.findByUserIdAndProvider(userId, 'ticktick');
 
     if (existingAccount) {
-      return this.prisma.account.update({
-        where: { id: existingAccount.id },
-        data: {
-          ticktickAccessToken: accessToken,
-          ticktickRefreshToken: refreshToken || existingAccount.ticktickRefreshToken,
-          ticktickId: ticktickId || existingAccount.ticktickId,
-          ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days default
-        },
+      return this.accountRepo.update(existingAccount.id, {
+        ticktickAccessToken: accessToken,
+        ticktickRefreshToken: refreshToken || existingAccount.ticktickRefreshToken,
+        ticktickId: ticktickId || existingAccount.ticktickId,
+        ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days default
       });
     }
 
     // Create new TickTick account entry
-    return this.prisma.account.create({
-      data: {
-        provider: 'ticktick',
-        providerAccountId: ticktickId || `ticktick_${userId}`,
-        ticktickAccessToken: accessToken,
-        ticktickRefreshToken: refreshToken,
-        ticktickId: ticktickId,
-        ticktickTokenExpiry: refreshToken ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
-        userId,
-      },
+    return this.accountRepo.create({
+      provider: 'ticktick',
+      providerAccountId: ticktickId || `ticktick_${userId}`,
+      ticktickAccessToken: accessToken,
+      refreshToken: refreshToken, // mapping to generic refreshToken field
+      userId,
     });
   }
 
@@ -509,14 +499,10 @@ export class TickTickService {
    * Disconnect TickTick account (remove tokens)
    */
   async disconnectTickTick(userId: string) {
-    const ticktickAccount = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-    });
+    const ticktickAccount = await this.accountRepo.findByUserIdAndProvider(userId, 'ticktick');
 
     if (ticktickAccount) {
-      await this.prisma.account.delete({
-        where: { id: ticktickAccount.id },
-      });
+      await this.accountRepo.delete(ticktickAccount.id);
     }
 
     return { success: true };
@@ -526,10 +512,7 @@ export class TickTickService {
    * Check if user has TickTick connected
    */
   async isConnected(userId: string): Promise<boolean> {
-    const account = await this.prisma.account.findFirst({
-      where: { userId, provider: 'ticktick' },
-      select: { ticktickAccessToken: true },
-    });
+    const account = await this.accountRepo.findByUserIdAndProvider(userId, 'ticktick');
     return !!account?.ticktickAccessToken;
   }
 }

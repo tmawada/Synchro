@@ -408,47 +408,40 @@ input, textarea, select {
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
+
+  /* Apply border and background color to specific parts */
+  /* Target the header/meta section which often contains the account/security info */
+  .security-alert-header {
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary) !important;
+    padding: 10px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
 }
 
-/* Preserve center alignment for email content - respect the original layout */
-.email-html-content center {
-  display: block !important;
-  text-align: center !important;
-}
-
-.email-html-content [align="center"] {
-  text-align: center !important;
-}
-
-/* Center tables that are meant to be centered */
+/* Force centering for email content */
+.email-html-content,
+.email-html-content center,
+.email-html-content [align="center"],
 .email-html-content table[align="center"],
 .email-html-content center > table,
 .email-html-content div[align="center"] {
+  text-align: center !important;
   margin-left: auto !important;
   margin-right: auto !important;
 }
 
-/* Text alignment for inline styles */
-.email-html-content [style*="text-align: center"],
-.email-html-content [style*="text-align:center"] {
-  text-align: center !important;
+/* Add this to force centering of tables even if they don't have align="center" */
+.email-html-content table {
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 
-/* AGGRESSIVELY force transparency on ALL table elements with maximum specificity */
-.email-html-content table,
-.email-html-content table[style],
-.email-html-content table[bgcolor],
-.email-html-content table[background],
-.email-html-content tbody,
-.email-html-content tbody[style],
-.email-html-content tbody[bgcolor],
-.email-html-content tr,
-.email-html-content tr[style],
-.email-html-content tr[bgcolor] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  border-color: var(--border-color) !important;
+/* Specific fix for Google Security Alert: Center the email/profile row */
+/* We target the container that holds the user email and profile pic */
+.email-html-content table[width="100%"] img {
+  margin: 0 auto !important;
 }
 
 /* Force transparency on table cells with maximum specificity */
