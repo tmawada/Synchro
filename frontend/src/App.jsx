@@ -1052,7 +1052,7 @@ const styles = {
   },
   mainSidebar: {
     position: 'relative',
-    backgroundColor: 'var(--bg-primary)',
+    backgroundColor: 'var(--bg-secondary)',
     borderRight: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
@@ -1424,7 +1424,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '0 24px',
-    backgroundColor: 'var(--bg-primary)',
+    backgroundColor: 'var(--bg-secondary)',
     flexShrink: 0,
   },
   topbarTitleArea: {

@@ -1,10 +1,10 @@
 :root {
   /* Midnight Black / Electric Blue / Cantaloupe Orange */
-  --bg-primary: #02070a;
-  --bg-secondary: #061018;
-  --bg-tertiary: #0b1a24;
-  --bg-card: rgba(6, 16, 24, 0.9);
-  --bg-card-hover: rgba(11, 26, 36, 0.95);
+  --bg-primary: #030a0f;
+  --bg-secondary: #050e14;
+  --bg-tertiary: #071218;
+  --bg-card: rgba(7, 18, 24, 0.9);
+  --bg-card-hover: rgba(9, 20, 26, 0.95);
   --border-color: rgba(2, 151, 222, 0.18);
   --border-color-active: rgba(2, 151, 222, 0.4);
 
@@ -404,7 +404,34 @@ input, textarea, select {
 /* Email HTML content styling */
 .email-html-content {
   color: var(--text-primary) !important;
-  background-color: transparent !important;
+  background-color: var(--bg-tertiary) !important;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+/* Preserve center alignment for email content - respect the original layout */
+.email-html-content center {
+  display: block !important;
+  text-align: center !important;
+}
+
+.email-html-content [align="center"] {
+  text-align: center !important;
+}
+
+/* Center tables that are meant to be centered */
+.email-html-content table[align="center"],
+.email-html-content center > table,
+.email-html-content div[align="center"] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* Text alignment for inline styles */
+.email-html-content [style*="text-align: center"],
+.email-html-content [style*="text-align:center"] {
+  text-align: center !important;
 }
 
 /* AGGRESSIVELY force transparency on ALL table elements with maximum specificity */
