@@ -635,6 +635,7 @@ export class AuthService {
                 senderName: senderName || senderEmail,
                 to: getHeader('To') || 'me',
                 account: account.providerAccountId || 'google',
+                snippet: data.snippet || '',
                 body: emailBody,
                 folder: 'inbox',
                 date: formattedDate,

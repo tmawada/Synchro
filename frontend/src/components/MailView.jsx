@@ -3,6 +3,34 @@ import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, S
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
 
+// Extract a plain-text snippet from HTML for the email list preview.
+// Strips all HTML tags and collapses whitespace.
+function getPlainTextSnippet(html) {
+  if (!html) return '';
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Email HTML from Gmail is a full document: it can carry its own <style>
+// blocks and <body style="margin: ...">. Injected as-is, those rules leak out
+// of the .email-html-content container and restyle the whole app (page shift,
+// white lines at the edges). Strip document-level tags so only inline element
+// styling remains. Also removes <script>/<iframe>/<link>/<meta> as a bonus.
+function sanitizeEmailHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<head[\s\S]*?<\/head>/gi, '')
+    .replace(/<\/?(html|body|base|link|meta|iframe|object|embed)[^>]*>/gi, '');
+}
+
 // Skeleton loader component for email cards
 function EmailCardSkeleton() {
   return (
@@ -315,7 +343,7 @@ export default function MailView({
                     <span style={styles.emailTime}>{mail.date}</span>
                   </div>
                   <div style={styles.emailSubject}>{mail.subject}</div>
-                  <div style={styles.emailPreview}>{mail.body}</div>
+                  <div style={styles.emailPreview}>{getPlainTextSnippet(mail.snippet || mail.body)}</div>
 
                   <div style={styles.emailCardFooter}>
                     <span style={styles.emailAccountBadge} className={`text-${provider}`}>
@@ -436,7 +464,7 @@ export default function MailView({
             <div
               className="email-html-content"
               style={styles.detailBody}
-              dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
+              dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(selectedEmail.body) }}
             />
 
             {/* Attachments */}
