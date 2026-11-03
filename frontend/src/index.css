@@ -309,6 +309,25 @@ body {
   background: rgba(239, 68, 68, 0.1);
 }
 
+/* Mail details: recipients ("To") dropdown toggle chip */
+.recipients-toggle {
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+}
+.recipients-toggle:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--primary);
+}
+.recipients-toggle:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(2, 151, 222, 0.25);
+}
+.recipients-toggle[aria-expanded='true'] {
+  color: var(--text-primary);
+  border-color: var(--primary);
+}
+
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }

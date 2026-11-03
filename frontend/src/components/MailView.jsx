@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon } from './Icons';
+import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon, ChevronDownIcon } from './Icons';
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
 
@@ -29,6 +29,31 @@ function sanitizeEmailHtml(html) {
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<\/?(html|body|base|link|meta|iframe|object|embed)[^>]*>/gi, '');
+}
+
+// Split the raw Gmail `To` header into individual recipients.
+// The header is a comma-separated list, but commas may also appear inside
+// quoted display names ("Doe, John" <j@x.com>) or angle-bracket addresses,
+// so only split on commas outside of quotes/angle brackets.
+function parseRecipients(to) {
+  if (!to) return [];
+  const parts = [];
+  let current = '';
+  let inQuotes = false;
+  let inAngle = false;
+  for (const ch of String(to)) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (ch === '<') inAngle = true;
+    if (ch === '>') inAngle = false;
+    if (ch === ',' && !inQuotes && !inAngle) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
 }
 
 // Skeleton loader component for email cards
@@ -128,6 +153,37 @@ export default function MailView({
 
   // Selected email for the detail pane; null shows the "no email selected" state
   const selectedEmail = selectedEmailId ? emails.find(e => e.id === selectedEmailId) || null : null;
+
+  // Recipients ("To") dropdown in the sender header: collapsed by default so a
+  // long recipient list can never stretch/break the header row. It drops down
+  // as an absolutely positioned overlay, so nothing else in the layout shifts.
+  const [showRecipients, setShowRecipients] = useState(false);
+  const metaRowRef = useRef(null);
+
+  // Close the recipients dropdown when clicking anywhere outside the header row
+  useEffect(() => {
+    if (!showRecipients) return;
+    const handleMouseDown = (e) => {
+      if (metaRowRef.current && !metaRowRef.current.contains(e.target)) {
+        setShowRecipients(false);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [showRecipients]);
+
+  // Start collapsed again whenever a different email is opened
+  useEffect(() => {
+    setShowRecipients(false);
+  }, [selectedEmailId]);
+
+  // Recipient data derived from the raw `To` header string
+  const parsedRecipients = selectedEmail ? parseRecipients(selectedEmail.to) : [];
+  const recipients = parsedRecipients.length > 0 ? parsedRecipients : ['me'];
+  const recipientCount = recipients.length;
+  // Chip preview: a single address when there is only one recipient, otherwise
+  // just the count — the full list only appears in the dropdown.
+  const recipientChipText = recipientCount > 1 ? `To: ${recipientCount} recipients` : `To: ${recipients[0]}`;
 
   const getProviderIcon = (provider) => {
     switch (provider) {
@@ -491,16 +547,53 @@ export default function MailView({
 
             <div style={styles.divider} />
 
-            {/* Email Meta */}
-            <div style={{...styles.emailMetaRow, ...styles.emailMetaContainer}} className="glass-panel">
+            {/* Email Meta — the "To" list stays hidden behind a small chip so
+                multiple recipients can never stretch/break this row. Clicking
+                the chip drops the full list down as an overlay (position:
+                absolute), leaving every other element untouched. */}
+            <div ref={metaRowRef} style={styles.emailMetaRow} className="glass-panel">
               <div style={styles.senderAvatar}>
-                {(selectedEmail.senderName || selectedEmail.sender)[0].toUpperCase()}
+                {(selectedEmail.senderName || selectedEmail.sender || '?')[0].toUpperCase()}
               </div>
               <div style={styles.metaText}>
                 <div style={styles.metaSenderName}>{selectedEmail.senderName || selectedEmail.sender}</div>
-                <div style={styles.metaSenderEmail}>From: {selectedEmail.sender} &bull; To: {selectedEmail.to || 'me'}</div>
+                <div style={styles.metaSubRow}>
+                  <span style={styles.metaSenderEmail}>From: {selectedEmail.sender}</span>
+                  <button
+                    type="button"
+                    className="recipients-toggle"
+                    style={styles.recipientsToggle}
+                    onClick={() => setShowRecipients((v) => !v)}
+                    aria-expanded={showRecipients}
+                    aria-label="Show all recipients"
+                  >
+                    <span style={styles.recipientsToggleLabel}>{recipientChipText}</span>
+                    <ChevronDownIcon
+                      size={12}
+                      style={{
+                        flexShrink: 0,
+                        transform: showRecipients ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s ease',
+                      }}
+                    />
+                  </button>
+                </div>
               </div>
               <div style={styles.metaTime}>{selectedEmail.date}</div>
+
+              {showRecipients && (
+                <div
+                  style={styles.recipientsDropdown}
+                  className="glass-panel"
+                  role="group"
+                  aria-label="All recipients"
+                >
+                  <div style={styles.recipientsDropdownTitle}>To ({recipientCount})</div>
+                  {recipients.map((r, i) => (
+                    <div key={i} style={styles.recipientItem}>{r}</div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Email Body */}
@@ -851,10 +944,14 @@ const styles = {
     alignItems: 'center',
     gap: '12px',
     padding: '2px 20px',
+    // Anchors the recipients dropdown so it can drop down as an overlay
+    position: 'relative',
+    minWidth: 0,
   },
   senderAvatar: {
     width: '38px',
     height: '38px',
+    flexShrink: 0,
     borderRadius: '50%',
     backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
@@ -867,19 +964,89 @@ const styles = {
   },
   metaText: {
     flexGrow: 1,
+    // Without minWidth: 0 a long recipient string forces this flex item to its
+    // min-content width, which is what broke the header row.
+    minWidth: 0,
+    overflow: 'hidden',
   },
   metaSenderName: {
     fontSize: '14px',
     fontWeight: '600',
     color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  metaSubRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    minWidth: 0,
   },
   metaSenderEmail: {
     fontSize: '11.5px',
     color: 'var(--text-muted)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    minWidth: 0,
+  },
+  recipientsToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    flexShrink: 0,
+    maxWidth: '240px',
+    padding: '2px 8px',
+    border: '1px solid var(--border-color)',
+    borderRadius: '999px',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    color: 'var(--text-secondary)',
+    fontFamily: 'inherit',
+    fontSize: '11.5px',
+    lineHeight: '1.5',
+    cursor: 'pointer',
+    overflow: 'hidden',
+    minWidth: 0,
+  },
+  recipientsToggleLabel: {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
+  },
+  recipientsDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 6px)',
+    left: '70px',
+    right: '20px',
+    maxWidth: '460px',
+    zIndex: 30,
+    padding: '10px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.35)',
+    animation: 'slideUp 0.18s ease-out',
+  },
+  recipientsDropdownTitle: {
+    fontSize: '10.5px',
+    fontWeight: '600',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: 'var(--text-muted)',
+  },
+  recipientItem: {
+    fontSize: '12.5px',
+    lineHeight: '1.45',
+    color: 'var(--text-secondary)',
+    wordBreak: 'break-word',
   },
   metaTime: {
     fontSize: '12px',
     color: 'var(--text-muted)',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
   },
   detailBody: {
     width: '100%',
