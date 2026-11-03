@@ -436,7 +436,7 @@ export default function TasksView({
             title="All Tasks"
           >
             <CheckSquareIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>All Tasks</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>All Tasks</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('all')}</span>}
           </button>
           <button
@@ -446,7 +446,7 @@ export default function TasksView({
             title="Due Today"
           >
             <CalendarIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Due Today</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Due Today</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('today')}</span>}
           </button>
           <button
@@ -456,7 +456,7 @@ export default function TasksView({
             title="High Priority"
           >
             <InfoIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>High Priority</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>High Priority</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('high')}</span>}
           </button>
           <button
@@ -466,7 +466,7 @@ export default function TasksView({
             title="Completed"
           >
             <CheckSquareIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Completed</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Completed</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('completed')}</span>}
           </button>
         </div>
@@ -480,7 +480,7 @@ export default function TasksView({
             title="Work Projects"
           >
             <MailIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Work Projects</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Work Projects</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_work')}</span>}
           </button>
           <button
@@ -490,7 +490,7 @@ export default function TasksView({
             title="Personal Life"
           >
             <MailIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Personal Life</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Personal Life</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_personal')}</span>}
           </button>
           <button
@@ -500,7 +500,7 @@ export default function TasksView({
             title="Routine / Habits"
           >
             <MailIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Routine / Habits</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Routine / Habits</span>}
             {!isSidebarCollapsed && <span style={{ ...styles.countBadge, marginLeft: 'auto' }}>{getCount('list_routine')}</span>}
           </button>
         </div>
@@ -1016,7 +1016,7 @@ const styles = {
     opacity: 1,
   },
   sidebar: {
-    width: '220px',
+    width: '180px',
     borderRight: '1px solid var(--border-color)',
     padding: '16px',
     display: 'flex',
@@ -1024,6 +1024,8 @@ const styles = {
     gap: '24px',
     backgroundColor: 'var(--bg-primary)',
     boxSizing: 'border-box',
+    overflow: 'hidden',
+    transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   navSection: {
     display: 'flex',
@@ -1059,13 +1061,15 @@ const styles = {
     color: 'var(--accent)',
     fontWeight: '600',
   },
-  countBadge: {
-    fontSize: '10px',
-    fontWeight: '600',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    padding: '2px 6px',
-    borderRadius: '10px',
-    color: 'var(--text-secondary)',
+  navLabel: {
+    marginLeft: '8px',
+    whiteSpace: 'nowrap',
+    animation: 'fadeInSlide 0.3s ease-out forwards',
+  },
+  navLabel: {
+    marginLeft: '8px',
+    whiteSpace: 'nowrap',
+    animation: 'fadeInSlide 0.3s ease-out forwards',
   },
   mainPanel: {
     flexGrow: 1,

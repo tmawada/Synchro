@@ -80,6 +80,7 @@ export default function App() {
   // Pagination state for emails
   const [mailPage, setMailPage] = useState(1);
   const [mailTotalPages, setMailTotalPages] = useState(1);
+  const [mailTotalUnread, setMailTotalUnread] = useState(0);
   const [mailLoading, setMailLoading] = useState(false);
 
   // Notification state
@@ -137,6 +138,11 @@ export default function App() {
           setEmails(data.emails);
           setMailTotalPages(data.totalPages || 1);
           setMailPage(data.page || 1);
+
+          // Always update the global unread count from the backend response
+          if (data.totalUnread !== undefined) {
+            setMailTotalUnread(data.totalUnread);
+          }
         }
       }
     } catch (err) {
@@ -801,8 +807,10 @@ export default function App() {
           >
             <div style={styles.navIconWrapper}>
               <MailIcon size={22} />
-              {emails.filter(e => e.folder === 'inbox' && !e.isRead).length > 0 && (
-                <div style={styles.badgeDot} />
+              {mailTotalUnread > 0 && (
+                <div style={styles.badgeCount}>
+                  {mailTotalUnread}
+                </div>
               )}
             </div>
             {isSidebarOpen && <span style={styles.navText}>Mails</span>}
@@ -984,6 +992,7 @@ export default function App() {
               totalPages={mailTotalPages}
               onPageChange={(page) => fetchEmails(page, 50, searchQuery)}
               isLoading={mailLoading}
+              totalUnread={mailTotalUnread}
             />
           )}
 

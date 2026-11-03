@@ -10,6 +10,16 @@ export class FirestoreAccountRepository implements IAccountRepository {
     return this.firestoreService.db.collection('accounts');
   }
 
+  private sanitizeData(data: any) {
+    const sanitized = { ...data };
+    Object.keys(sanitized).forEach(key => {
+      if (sanitized[key] === undefined) {
+        delete sanitized[key];
+      }
+    });
+    return sanitized;
+  }
+
   async findById(id: string): Promise<Account | null> {
     const doc = await this.collection.doc(id).get();
     if (!doc.exists) return null;
@@ -43,15 +53,12 @@ export class FirestoreAccountRepository implements IAccountRepository {
 
   async create(data: CreateAccountDto): Promise<Account> {
     const ref = this.collection.doc(`${data.provider}:${data.providerAccountId}`);
-    await ref.set({
-      ...data,
-      tokenExpiry: data.accessToken ? null : undefined, // Placeholder if needed
-    });
+    await ref.set(this.sanitizeData(data));
     return { id: ref.id, ...data } as Account;
   }
 
   async update(id: string, data: UpdateAccountDto): Promise<Account> {
-    await this.collection.doc(id).update(data as any);
+    await this.collection.doc(id).update(this.sanitizeData(data) as any);
     const doc = await this.collection.doc(id).get();
     return { id: doc.id, ...doc.data() } as Account;
   }

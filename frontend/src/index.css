@@ -420,8 +420,7 @@ input, textarea, select {
   }
 }
 
-/* Force centering for email content */
-.email-html-content,
+/* Force centering for email content elements (but not the container itself) */
 .email-html-content center,
 .email-html-content [align="center"],
 .email-html-content table[align="center"],
@@ -444,33 +443,30 @@ input, textarea, select {
   margin: 0 auto !important;
 }
 
-/* Force transparency on table cells with maximum specificity */
+/* Force transparency on common containers and text elements with maximum specificity */
+.email-html-content div,
+.email-html-content div[style],
+.email-html-content div[bgcolor],
+.email-html-content span,
+.email-html-content span[style],
+.email-html-content p,
+.email-html-content p[style],
+.email-html-content section,
+.email-html-content article,
+.email-html-content header,
+.email-html-content footer,
 .email-html-content td,
 .email-html-content td[style],
 .email-html-content td[bgcolor],
-.email-html-content td[background],
 .email-html-content th,
 .email-html-content th[style],
-.email-html-content th[bgcolor] {
+.email-html-content th[bgcolor],
+.email-html-content table,
+.email-html-content table[style],
+.email-html-content table[bgcolor] {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
-  color: var(--text-primary) !important;
-}
-
-/* Force transparency on divs unless they're clearly buttons */
-.email-html-content div,
-.email-html-content div[style],
-.email-html-content div[bgcolor] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Make paragraphs transparent with theme text color */
-.email-html-content p {
-  background-color: transparent !important;
-  color: var(--text-primary) !important;
 }
 
 /* Force all text elements to use theme color */
@@ -493,6 +489,14 @@ input, textarea, select {
 .email-html-content *[style*="color"],
 .email-html-content font[color] {
   color: var(--text-primary) !important;
+}
+
+/* Very aggressive catch-all for any element with background-related attributes/styles
+   that isn't a button link or a code block */
+.email-html-content *:not(a):not(code):not(pre)[style*="background"],
+.email-html-content *:not(a):not(code):not(pre)[bgcolor] {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 /* EXCEPTION: Preserve button backgrounds - only on <a> tags that look like buttons */

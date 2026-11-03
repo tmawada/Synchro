@@ -17,6 +17,10 @@ interface GoogleProfile {
 
 @Injectable()
 export class AuthService {
+  // Simple in-memory cache for total unread counts
+  private unreadCache = new Map<string, { count: number; timestamp: number }>();
+  private readonly CACHE_TTL_MS = 60000; // 1 minute
+
   constructor(
     @Inject(USER_REPOSITORY) private userRepo: IUserRepository,
     @Inject(ACCOUNT_REPOSITORY) private accountRepo: IAccountRepository,
@@ -510,9 +514,14 @@ export class AuthService {
         return res;
       };
 
-      // Walk Gmail's pageToken cursor until the requested page
+      // Walk Gmail's pageToken cursor to collect messages from up to 5 pages
+      let allMessages: { id: string }[] = [];
+      let currentToken: string | undefined = undefined;
+      let pagesFetched = 0;
+
+      // Initial fetch to get first page + first token
       let listRes = await googleFetch(listUrlFor());
-      if (!listRes) return { emails: [], totalPages: 0, page: 1 };
+      if (!listRes) return { emails: [], totalPages: 0, page: 1, totalUnread: 0 };
 
       let listData = (await listRes.json()) as {
         messages?: { id: string }[];
@@ -520,31 +529,76 @@ export class AuthService {
         nextPageToken?: string;
       };
 
-      let currentPage = 1;
-      while (currentPage < targetPage && listData?.nextPageToken && listData.messages?.length) {
+      if (listData.messages) {
+        allMessages.push(...listData.messages);
+      }
+      currentToken = listData.nextPageToken;
+      pagesFetched = 1;
+
+      while (pagesFetched < 5 && currentToken) {
         // Brief pause between list requests to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 150));
-        const res = await googleFetch(listUrlFor(listData.nextPageToken));
+        await new Promise(resolve => setTimeout(resolve, 200));
+        const res = await googleFetch(listUrlFor(currentToken));
         if (!res) break;
-        listData = (await res.json()) as typeof listData;
-        currentPage++;
+
+        const nextData = (await res.json()) as typeof listData;
+        if (nextData.messages) {
+          allMessages.push(...nextData.messages);
+        }
+        currentToken = nextData.nextPageToken;
+        pagesFetched++;
       }
 
-      const messages = listData?.messages || [];
+      console.log(`[EmailFetch] Fetched ${pagesFetched} pages, ${allMessages.length} total message IDs.`);
+
+      // If specific targetPage requested, slice the aggregated messages to return just that page
+      const messages = allMessages.slice((targetPage - 1) * fetchLimit, targetPage * fetchLimit);
+
       if (messages.length === 0) {
-        // Requested page is past the end of the mailbox
-        return { emails: [], totalPages: 1, page: targetPage };
+        return { emails: [], totalPages: 1, page: targetPage, totalUnread: 0 };
       }
 
-      const totalPages = Math.max(
-        1,
-        Math.ceil((listData.resultSizeEstimate || messages.length) / fetchLimit),
-      );
+      const totalPages = Math.min(5, Math.ceil(allMessages.length / fetchLimit));
 
       // Fetch message details in parallel batches to reduce wall time
       const emails: any[] = [];
       const BATCH_SIZE = 10;
+      let totalUnreadCount = 0;
 
+      // 1. First pass: Check cache for unread count
+      const cached = this.unreadCache.get(userId);
+      if (!search && cached && (Date.now() - cached.timestamp < this.CACHE_TTL_MS)) {
+        totalUnreadCount = cached.count;
+        console.log(`[EmailFetch] Using cached unread count: ${totalUnreadCount}`);
+      } else {
+        // Fetch labelIds for ALL aggregated messages to calculate total unread
+        for (let i = 0; i < allMessages.length; i += BATCH_SIZE) {
+          const batch = allMessages.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map(async (msg) => {
+              const detailRes = await googleFetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&fields=labelIds`
+              );
+              if (!detailRes) return false;
+              const data = (await detailRes.json()) as any;
+              return !!data.labelIds?.includes('UNREAD');
+            })
+          );
+          totalUnreadCount += batchResults.filter((isUnread) => isUnread === true).length;
+
+          // Brief pause between batches to avoid rate limits
+          if (i + BATCH_SIZE < allMessages.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+
+        // Update cache
+        if (!search) {
+          this.unreadCache.set(userId, { count: totalUnreadCount, timestamp: Date.now() });
+        }
+      }
+
+      // 2. Second pass: Fetch full details for target page only
       for (let i = 0; i < messages.length; i += BATCH_SIZE) {
         const batch = messages.slice(i, i + BATCH_SIZE);
         const results = await Promise.all(
@@ -617,10 +671,11 @@ export class AuthService {
         emails,
         totalPages,
         page: targetPage,
+        totalUnread: totalUnreadCount,
       };
     } catch (error) {
       console.error('Error fetching Google emails:', error);
-      return { emails: [], totalPages: 0, page: 1 };
+      return { emails: [], totalPages: 0, page: 1, totalUnread: 0 };
     }
   }
 

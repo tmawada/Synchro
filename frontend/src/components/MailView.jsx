@@ -61,11 +61,14 @@ export default function MailView({
   currentPage = 1,
   totalPages = 1,
   onPageChange,
-  isLoading = false
+  isLoading = false,
+  onMailMarkedAsRead, // New prop to update the overall unread count in App.jsx
+
 }) {
   const [selectedFolder, setSelectedFolder] = useState('inbox'); // inbox, starred, sent, trash
   const [selectedEmailId, setSelectedEmailId] = useState(null);
   const [replyBody, setReplyBody] = useState('');
+  const [showReplyForm, setShowReplyForm] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     const saved = localStorage.getItem('synchro_isSidebarCollapsed');
     return saved === 'true';
@@ -213,6 +216,13 @@ export default function MailView({
   });
 
   const getUnreadCount = (folder) => {
+    if (folder === 'inbox') {
+      // For the main inbox, we now rely on the totalUnread count from the backend
+      // as it's more accurate across all pages. Other folders still use local calculation.
+      return emails.filter(m => m.folder === folder && !m.isRead &&
+        (activeAccountFilter === 'all' || (connectedAccounts.find(acc => acc.email === m.account)?.id === activeAccountFilter))
+      ).length;
+    }
     return emails.filter(m => {
       if (m.folder !== folder) return false;
       if (m.isRead) return false;
@@ -223,6 +233,9 @@ export default function MailView({
       return true;
     }).length;
   };
+
+  const unreadInboxCount = emails.filter(e => e.folder === 'inbox' && !e.isRead).length;
+
 
   return (
     <div style={styles.container} className="animate-fade-in" data-mail-container>
@@ -275,7 +288,7 @@ export default function MailView({
             title="Inbox"
           >
             <MailIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Inbox</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Inbox</span>}
             {!isSidebarCollapsed && getUnreadCount('inbox') > 0 && (
               <span className="badge badge-primary" style={{ marginLeft: 'auto' }}>{getUnreadCount('inbox')}</span>
             )}
@@ -287,7 +300,7 @@ export default function MailView({
             title="Starred"
           >
             <StarIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Starred</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Starred</span>}
           </button>
           <button
             className={`nav-item ${selectedFolder === 'sent' ? 'nav-item-active' : ''}`}
@@ -296,7 +309,7 @@ export default function MailView({
             title="Sent"
           >
             <ClockIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Sent</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Sent</span>}
           </button>
           <button
             className={`nav-item ${selectedFolder === 'trash' ? 'nav-item-active' : ''}`}
@@ -305,7 +318,7 @@ export default function MailView({
             title="Trash"
           >
             <TrashIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>Trash</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>Trash</span>}
           </button>
         </div>
 
@@ -318,7 +331,7 @@ export default function MailView({
             title="All Inboxes"
           >
             <MailIcon size={16} />
-            {!isSidebarCollapsed && <span style={{ marginLeft: '8px' }}>All Inboxes</span>}
+            {!isSidebarCollapsed && <span style={styles.navLabel}>All Inboxes</span>}
           </button>
 
           {connectedAccounts.map((acc) => {
@@ -333,7 +346,7 @@ export default function MailView({
               >
                 <Icon size={16} />
                 {!isSidebarCollapsed && (
-                  <span style={{ marginLeft: '8px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <span style={{ ...styles.navLabel, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                     {acc.email}
                   </span>
                 )}
@@ -387,6 +400,8 @@ export default function MailView({
                       const updated = emails.map(m => m.id === mail.id ? { ...m, isRead: true } : m);
                       onUpdateEmails(updated);
                       syncReadToGmail(mail);
+                      onMailMarkedAsRead(); // Notify App.jsx to update global unread count
+
                     }
                   }}
                 >
@@ -471,33 +486,13 @@ export default function MailView({
                 </div>
               </div>
 
-              {/* Integrations Toolbar */}
-              <div style={styles.toolbar}>
-                <button
-                  style={styles.toolbarBtn}
-                  className="glass-panel-interactive"
-                  onClick={() => onConvertEmailToTask(selectedEmail)}
-                  title="Create a Todo task from this email"
-                >
-                  <CheckSquareIcon size={15} />
-                  <span>Convert to Task</span>
-                </button>
-                <button
-                  style={styles.toolbarBtn}
-                  className="glass-panel-interactive"
-                  onClick={() => onBlockCalendarForEmail(selectedEmail)}
-                  title="Schedule a time block in calendar for this email"
-                >
-                  <ClockIcon size={15} />
-                  <span>Block Calendar</span>
-                </button>
-              </div>
+              {/* Integrations Toolbar - Removed */}
             </div>
 
             <div style={styles.divider} />
 
             {/* Email Meta */}
-            <div style={styles.emailMetaRow} className="glass-panel" style={{...styles.emailMetaRow, ...styles.emailMetaContainer}}>
+            <div style={{...styles.emailMetaRow, ...styles.emailMetaContainer}} className="glass-panel">
               <div style={styles.senderAvatar}>
                 {(selectedEmail.senderName || selectedEmail.sender)[0].toUpperCase()}
               </div>
@@ -511,7 +506,7 @@ export default function MailView({
             {/* Email Body */}
             <div
               className="email-html-content"
-              style={{ ...styles.detailBody, width: '100%', maxWidth: '800px', margin: '0 auto' }}
+              style={styles.detailBody}
               dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(selectedEmail.body) }}
             />
 
@@ -615,6 +610,7 @@ const styles = {
     backgroundColor: 'var(--bg-primary)',
     boxSizing: 'border-box',
     overflow: 'hidden',
+    transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
   },
   composeBtn: {
     width: '100%',
@@ -668,6 +664,11 @@ const styles = {
     color: '#0297de',
     fontWeight: '600',
   },
+  navLabel: {
+    marginLeft: '8px',
+    whiteSpace: 'nowrap',
+    animation: 'fadeInSlide 0.3s ease-out forwards',
+  },
   listPane: {
     width: '480px',
     flexShrink: 0,
@@ -711,13 +712,13 @@ const styles = {
     fontSize: '13.5px',
   },
   emailCard: {
-    padding: '16px',
+    padding: '8px 12px',
     borderBottom: '1px solid var(--border-color)',
     borderLeft: '3px solid transparent',
     cursor: 'pointer',
     display: 'flex',
     flexDirection: 'column',
-    gap: '6px',
+    gap: '4px',
     transition: 'background-color 0.2s, border-color 0.2s',
     ':hover': {
       backgroundColor: 'rgba(2, 151, 222, 0.1)',
@@ -840,21 +841,6 @@ const styles = {
     fontSize: '12px',
     color: 'var(--text-secondary)',
   },
-  toolbar: {
-    display: 'flex',
-    gap: '10px',
-  },
-  toolbarBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '8px 12px',
-    fontSize: '12.5px',
-    fontWeight: '500',
-    borderRadius: '6px',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-  },
   divider: {
     height: '1px',
     background: 'var(--border-color)',
@@ -864,6 +850,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    padding: '2px 20px',
   },
   senderAvatar: {
     width: '38px',
@@ -895,6 +882,8 @@ const styles = {
     color: 'var(--text-muted)',
   },
   detailBody: {
+    width: '100%',
+    boxSizing: 'border-box',
     fontSize: '14px',
     lineHeight: '1.6',
     color: 'var(--text-primary)',
