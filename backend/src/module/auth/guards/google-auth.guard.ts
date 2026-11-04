@@ -5,6 +5,7 @@ import { AuthGuard } from '@nestjs/passport';
 export class GoogleAuthGuard extends AuthGuard('google') {
   getAuthenticateOptions(context: ExecutionContext) {
     return {
+      session: false,
       accessType: 'offline',
       prompt: 'consent',
     };
