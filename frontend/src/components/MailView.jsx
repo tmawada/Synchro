@@ -215,6 +215,7 @@ export default function MailView({
   });
   const [isDragging, setIsDragging] = useState(false);
   const splitterRef = useRef(null);
+  const emailBodyRef = useRef(null);
 
   // Handle splitter drag
   useEffect(() => {
@@ -282,6 +283,30 @@ export default function MailView({
   const canZoomIn = emailZoom < EMAIL_ZOOM_MAX;
   const changeEmailZoom = (delta) => setEmailZoom((prev) => clampEmailZoom(prev + delta));
   const resetEmailZoom = () => setEmailZoom(EMAIL_ZOOM_DEFAULT);
+
+  // Ctrl + Scroll wheel zoom handler for the email body.
+  // Uses a native listener with { passive: false } to allow blocking the
+  // default browser scroll/zoom behavior when the Ctrl/Cmd key is held.
+  useEffect(() => {
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        // deltaY is negative when scrolling up (zoom in)
+        const delta = e.deltaY < 0 ? EMAIL_ZOOM_STEP : -EMAIL_ZOOM_STEP;
+        changeEmailZoom(delta);
+      }
+    };
+
+    const el = emailBodyRef.current;
+    if (el) {
+      el.addEventListener('wheel', handleWheel, { passive: false });
+    }
+    return () => {
+      if (el) {
+        el.removeEventListener('wheel', handleWheel);
+      }
+    };
+  }, [changeEmailZoom]);
 
   // Recipients ("To") dropdown in the sender header: collapsed by default so a
   // long recipient list can never stretch/break the header row. It drops down
@@ -767,7 +792,11 @@ export default function MailView({
                 content is scaled, so zooming never moves the surrounding panes.
                 `zoom` (rather than transform: scale) reflows the email within
                 the available width and lets the reader pane scroll naturally. */}
-            <div className="email-html-content glass-panel" style={styles.detailBody}>
+            <div
+              ref={emailBodyRef}
+              className="email-html-content glass-panel"
+              style={styles.detailBody}
+            >
               <div
                 className="email-zoom-content"
                 style={{ ...styles.zoomContent, zoom: emailZoom }}
