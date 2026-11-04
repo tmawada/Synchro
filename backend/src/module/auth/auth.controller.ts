@@ -67,9 +67,12 @@ export class AuthController {
     const user = req.user as { accessToken: string; user: { id: string; email: string; name: string } };
     const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:5173');
 
+    // Ensure no double slashes and handle trailing slash in frontendUrl
+    const baseUrl = frontendUrl.endsWith('/') ? frontendUrl.slice(0, -1) : frontendUrl;
+
     // Redirect to frontend with the JWT token in the URL hash fragment.
     // This is more secure than query parameters as the hash is not sent to the server.
-    const redirectUrl = `${frontendUrl}/#token=${user.accessToken}`;
+    const redirectUrl = `${baseUrl}/#token=${user.accessToken}`;
     res.redirect(redirectUrl);
   }
 

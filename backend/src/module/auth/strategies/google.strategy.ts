@@ -22,7 +22,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       scope: ['email', 'profile', 'https://www.googleapis.com/auth/gmail.modify'],
       accessType: 'offline',
       prompt: 'consent',
-      state: true,
+      state: false,
     } as any);
   }
 
