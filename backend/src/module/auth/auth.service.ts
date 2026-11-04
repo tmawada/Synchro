@@ -535,7 +535,7 @@ export class AuthService {
       currentToken = listData.nextPageToken;
       pagesFetched = 1;
 
-      while (pagesFetched < 5 && currentToken) {
+      while (allMessages.length < 150 && currentToken) {
         // Brief pause between list requests to avoid rate limits
         await new Promise(resolve => setTimeout(resolve, 200));
         const res = await googleFetch(listUrlFor(currentToken));
@@ -549,7 +549,7 @@ export class AuthService {
         pagesFetched++;
       }
 
-      console.log(`[EmailFetch] Fetched ${pagesFetched} pages, ${allMessages.length} total message IDs.`);
+      console.log(`[EmailFetch] Aggregated ${allMessages.length} message IDs across ${pagesFetched} fetch cycles.`);
 
       // If specific targetPage requested, slice the aggregated messages to return just that page
       const messages = allMessages.slice((targetPage - 1) * fetchLimit, targetPage * fetchLimit);
@@ -558,7 +558,7 @@ export class AuthService {
         return { emails: [], totalPages: 1, page: targetPage, totalUnread: 0 };
       }
 
-      const totalPages = Math.min(5, Math.ceil(allMessages.length / fetchLimit));
+      const totalPages = Math.ceil(allMessages.length / fetchLimit);
 
       // Fetch message details in parallel batches to reduce wall time
       const emails: any[] = [];
@@ -628,10 +628,24 @@ export class AuthService {
               if (dateHeader) {
                 try {
                   const d = new Date(dateHeader);
-                  formattedDate = d.toLocaleDateString([], {
-                    month: 'short',
-                    day: 'numeric',
+                  const now = new Date();
+                  const isToday = d.toDateString() === now.toDateString();
+
+                  const timePart = d.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
                   });
+
+                  if (isToday) {
+                    formattedDate = timePart;
+                  } else {
+                    const datePart = d.toLocaleDateString([], {
+                      month: 'short',
+                      day: 'numeric',
+                    });
+                    formattedDate = `${datePart} ${timePart}`;
+                  }
                 } catch {}
               }
 

@@ -1054,7 +1054,7 @@ const styles = {
   emailTime: {
     fontSize: '11px',
     color: 'var(--text-muted)',
-    minWidth: '50px',
+    minWidth: '90px',
     textAlign: 'right',
   },
   emailCardRow2: {

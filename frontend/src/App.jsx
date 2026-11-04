@@ -86,10 +86,12 @@ export default function App() {
   // Notification state
   const [notification, setNotification] = useState({ show: false, message: '' });
 
-  // Handle OAuth callback — extract token from URL after Google redirect
+  // Handle OAuth callback — extract token from URL hash after Google redirect
   useEffect(() => {
-    const url = new URL(window.location.href);
-    const token = url.searchParams.get('token');
+    const hash = window.location.hash.substring(1);
+    const params = new URLSearchParams(hash);
+    const token = params.get('token');
+
     if (token) {
       localStorage.setItem('synchro_token', token);
       // Fetch user profile with the token
@@ -106,8 +108,8 @@ export default function App() {
         .catch(() => {
           triggerNotification('Failed to fetch user profile.');
         });
-      // Clean the URL
-      window.history.replaceState({}, document.title, '/');
+      // Clean the URL hash
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
 

@@ -6,7 +6,7 @@ async function bootstrap() {
 
   // Enable CORS for the React frontend
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: process.env.FRONTEND_URL || 'https://synchro-workspace.vercel.app',
     credentials: true,
   });
 

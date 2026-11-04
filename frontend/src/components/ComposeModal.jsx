@@ -43,7 +43,7 @@ export default function ComposeModal({ isOpen, onClose, connectedAccounts, onSen
         to,
         subject,
         body,
-        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
         timestamp: Date.now()
       });
       setIsSending(false);
