@@ -7,19 +7,27 @@
   --bg-card-hover: rgba(9, 20, 26, 0.95);
   --border-color: rgba(2, 151, 222, 0.18);
   --border-color-active: rgba(2, 151, 222, 0.4);
+  --border-app: rgba(255, 255, 255, 0.1);
 
   --text-primary: #f0f6fa;
   --text-secondary: #8fa3b0;
   --text-muted: #5d7280;
+  --text-adaptive: #ffffff;
+  --border-adaptive: var(--text-primary);
 
   --primary: #0297de;
   --primary-hover: #33b0ea;
   --primary-glow: rgba(2, 151, 222, 0.4);
   --primary-deep: #013a57;
+  --bg-hover-subtle: rgba(2, 151, 222, 0.1);
+  --bg-unread-subtle: rgba(2, 151, 222, 0.15);
 
   --accent: #fc734d;
   --accent-hover: #ff8c6b;
   --accent-glow: rgba(252, 115, 77, 0.4);
+
+  --star-color: #fbbf24;
+  --dropdown-shadow: rgba(0, 0, 0, 0.35);
 
   --gold: #fc734d;
   --gold-glow: rgba(252, 115, 77, 0.3);
@@ -35,10 +43,14 @@
   --color-custom: #00c853;
 
   /* Statuses */
-  --success: #00c853;
-  --warning: #fc734d;
-  --danger: #ff5252;
-  --info: #0297de;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-pink: #ec4899;
+  --danger-glow: rgba(239, 68, 68, 0.15);
+  --warning-glow: rgba(245, 158, 11, 0.15);
+  --success-glow: rgba(16, 185, 129, 0.15);
+  --danger-pink-glow: rgba(236, 72, 153, 0.15);
 
   /* Font settings */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -66,10 +78,13 @@
   --bg-card-hover: rgba(245, 249, 252, 0.98);
   --border-color: rgba(2, 79, 116, 0.16);
   --border-color-active: rgba(2, 151, 222, 0.42);
+  --border-app: rgba(255, 255, 255, 0.1);
 
   --text-primary: #15232c;
   --text-secondary: #526775;
   --text-muted: #748894;
+  --text-adaptive: #000000;
+  --border-adaptive: #000000;
 
   --primary: #027db8;
   --primary-hover: #026a9d;
@@ -328,6 +343,26 @@ body {
   border-color: var(--primary);
 }
 
+/* Email reader zoom controls */
+.email-zoom-btn {
+  transition: color 0.2s, background-color 0.2s, opacity 0.2s;
+}
+.email-zoom-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background-color: var(--primary-glow);
+}
+.email-zoom-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--primary-glow);
+}
+.email-zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.email-zoom-level {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -422,24 +457,46 @@ input, textarea, select {
 
 /* Email HTML content styling */
 .email-html-content {
-  color: var(--text-primary) !important;
-  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary);
+  background-color: var(--bg-card) !important;
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--border-color);
-
-  /* Apply border and background color to specific parts */
-  /* Target the header/meta section which often contains the account/security info */
-  .security-alert-header {
-    border: 1px solid var(--border-color);
-    background-color: var(--bg-secondary) !important;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 10px;
-  }
 }
 
-/* Force centering for email content elements (but not the container itself) */
+/* Inner wrapper that receives the inline `zoom` value from MailView. Keeping
+   the zoom here (rather than on .email-html-content) means the outer panel and
+   its padding never change size. The rules below stop fixed-width email
+   elements from spilling out of the reader at high zoom levels. */
+.email-zoom-content {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.email-zoom-content img,
+.email-zoom-content table,
+.email-zoom-content pre {
+  max-width: 100% !important;
+}
+
+.email-zoom-content [width],
+.email-zoom-content [style*="width" i] {
+  max-width: 100% !important;
+}
+
+.email-html-content .security-alert-header {
+  border: 1px solid var(--text-primary);
+  background-color: var(--bg-secondary) !important;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+/* Neutral (black/white/grey) inline text colours are normalised to
+   var(--text-primary) in MailView.jsx's sanitizeEmailHtml helper, so they follow
+   the current theme. Saturated colours (red, blue, brand colours, ...) are left
+   untouched there. */
 .email-html-content center,
 .email-html-content [align="center"],
 .email-html-content table[align="center"],
@@ -488,27 +545,6 @@ input, textarea, select {
   background-image: none !important;
 }
 
-/* Force all text elements to use theme color */
-.email-html-content span,
-.email-html-content h1,
-.email-html-content h2,
-.email-html-content h3,
-.email-html-content h4,
-.email-html-content h5,
-.email-html-content h6,
-.email-html-content li,
-.email-html-content strong,
-.email-html-content em,
-.email-html-content b,
-.email-html-content i {
-  color: var(--text-primary) !important;
-}
-
-/* Override ALL inline text colors */
-.email-html-content *[style*="color"],
-.email-html-content font[color] {
-  color: var(--text-primary) !important;
-}
 
 /* Very aggressive catch-all for any element with background-related attributes/styles
    that isn't a button link or a code block */
@@ -582,6 +618,7 @@ input, textarea, select {
   padding: 8px;
   vertical-align: top;
   background-color: transparent !important;
+  border: 1px solid var(--text-primary) !important;
 }
 
 .email-html-content p {
@@ -594,7 +631,7 @@ input, textarea, select {
 .email-html-content pre,
 .email-html-content code {
   background-color: var(--bg-tertiary) !important;
-  border: 1px solid var(--border-color) !important;
+  border: 1px solid var(--text-primary) !important;
   border-radius: 4px;
   padding: 2px 6px;
   font-family: 'Courier New', monospace;

@@ -1,7 +1,23 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon, ChevronDownIcon } from './Icons';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { MailIcon, StarIcon, TrashIcon, ReplyIcon, ClockIcon, CheckSquareIcon, SearchIcon, GmailIcon, OutlookIcon, YahooIcon, CustomIcon, ChevronDownIcon, ZoomInIcon, ZoomOutIcon } from './Icons';
 
 const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3030`;
+
+// Email reader zoom. Keep the range conservative so a zoomed email can grow
+// vertically without ever pushing the surrounding panes out of place.
+const EMAIL_ZOOM_MIN = 0.5;
+const EMAIL_ZOOM_MAX = 2;
+const EMAIL_ZOOM_STEP = 0.1;
+const EMAIL_ZOOM_DEFAULT = 1;
+const EMAIL_ZOOM_STORAGE_KEY = 'synchro_emailZoom';
+
+function clampEmailZoom(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return EMAIL_ZOOM_DEFAULT;
+  const clamped = Math.min(EMAIL_ZOOM_MAX, Math.max(EMAIL_ZOOM_MIN, numeric));
+  // Round to the nearest percentage so repeated +/- steps never drift.
+  return Math.round(clamped * 100) / 100;
+}
 
 // Extract a plain-text snippet from HTML for the email list preview.
 // Strips all HTML tags and collapses whitespace.
@@ -22,13 +38,102 @@ function getPlainTextSnippet(html) {
 // styling remains. Also removes <script>/<iframe>/<link>/<meta> as a bonus.
 function sanitizeEmailHtml(html) {
   if (!html) return '';
-  return html
+  const sanitized = html
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<!DOCTYPE[^>]*>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<\/?(html|body|base|link|meta|iframe|object|embed)[^>]*>/gi, '');
+  return normalizeEmailTextColors(sanitized);
+}
+
+// Canvas is used only to resolve CSS colour strings (named colours, hex, rgb,
+// hsl, ...) into a predictable RGB form. Created lazily so this file still works
+// in environments without a DOM (tests, SSR).
+let colorProbe;
+const NON_COLOR_KEYWORDS = /^(inherit|initial|unset|revert|revert-layer|currentcolor)$/i;
+function parseCssColor(value) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  // These inherit/derive from the surrounding element, so leave them alone.
+  if (NON_COLOR_KEYWORDS.test(trimmed) || /^var\(/i.test(trimmed)) return null;
+
+  if (colorProbe === undefined) {
+    colorProbe = typeof document !== 'undefined'
+      ? document.createElement('canvas').getContext('2d')
+      : null;
+  }
+  if (!colorProbe) return null;
+
+  // An invalid colour leaves the previous fillStyle untouched.
+  const sentinel = '#010203';
+  colorProbe.fillStyle = sentinel;
+  colorProbe.fillStyle = value;
+  const normalized = colorProbe.fillStyle;
+  if (normalized === sentinel) return null;
+
+  if (normalized.startsWith('#')) {
+    const hex = normalized.slice(1);
+    if (hex.length === 3) {
+      return [
+        parseInt(hex[0] + hex[0], 16),
+        parseInt(hex[1] + hex[1], 16),
+        parseInt(hex[2] + hex[2], 16),
+        1,
+      ];
+    }
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16),
+      1,
+    ];
+  }
+
+  const match = normalized.match(/rgba?\(([^)]+)\)/i);
+  if (!match) return null;
+  const [r, g, b, a = 1] = match[1].split(',').map(Number);
+  return [r, g, b, a];
+}
+
+// Black, white and greys are "neutral" and should follow the app theme.
+// Saturated colours (red, blue, brand colours, ...) are left untouched.
+function isNeutralColor(value) {
+  const rgb = parseCssColor(value);
+  if (!rgb) return false;
+  const [r, g, b, a] = rgb;
+  if (a === 0) return false;
+  return Math.max(r, g, b) - Math.min(r, g, b) <= 20;
+}
+
+// Email HTML hard-codes text colours for the client it was written in. Neutral
+// colours become unreadable when the app theme is the opposite (e.g. black
+// Gmail text on our dark background), while intentionally coloured text should
+// keep its colour. Replace only neutral inline colours with the theme
+// foreground. Using a CSS variable (instead of literal white/black) means the
+// text also follows live theme changes, including the default "system" theme.
+function normalizeEmailTextColors(html) {
+  if (!html || typeof DOMParser === 'undefined') return html;
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  doc.body.querySelectorAll('[style], font[color]').forEach((el) => {
+    if (el.style?.color && isNeutralColor(el.style.color)) {
+      el.style.setProperty('color', 'var(--text-primary)', 'important');
+    }
+
+    // <font color="..."> is an old-style attribute, not a CSS declaration.
+    if (el.tagName === 'FONT' && el.hasAttribute('color') && !el.style?.color) {
+      const attrColor = el.getAttribute('color');
+      if (isNeutralColor(attrColor)) {
+        el.removeAttribute('color');
+        el.style.setProperty('color', 'var(--text-primary)', 'important');
+      }
+    }
+  });
+
+  return doc.body.innerHTML;
 }
 
 // Split the raw Gmail `To` header into individual recipients.
@@ -153,6 +258,30 @@ export default function MailView({
 
   // Selected email for the detail pane; null shows the "no email selected" state
   const selectedEmail = selectedEmailId ? emails.find(e => e.id === selectedEmailId) || null : null;
+
+  // Sanitise/normalise once per email body instead of on every keystroke/render.
+  const emailBodyHtml = useMemo(
+    () => sanitizeEmailHtml(selectedEmail?.body),
+    [selectedEmail?.body]
+  );
+
+  // Email content zoom (reader pane only). Persisted so the preference survives
+  // re-opening the app, and clamped so the reader can never shrink/grow past a
+  // usable range.
+  const [emailZoom, setEmailZoom] = useState(() => {
+    if (typeof localStorage === 'undefined') return EMAIL_ZOOM_DEFAULT;
+    const saved = localStorage.getItem(EMAIL_ZOOM_STORAGE_KEY);
+    return saved === null ? EMAIL_ZOOM_DEFAULT : clampEmailZoom(saved);
+  });
+
+  useEffect(() => {
+    localStorage.setItem(EMAIL_ZOOM_STORAGE_KEY, emailZoom.toString());
+  }, [emailZoom]);
+
+  const canZoomOut = emailZoom > EMAIL_ZOOM_MIN;
+  const canZoomIn = emailZoom < EMAIL_ZOOM_MAX;
+  const changeEmailZoom = (delta) => setEmailZoom((prev) => clampEmailZoom(prev + delta));
+  const resetEmailZoom = () => setEmailZoom(EMAIL_ZOOM_DEFAULT);
 
   // Recipients ("To") dropdown in the sender header: collapsed by default so a
   // long recipient list can never stretch/break the header row. It drops down
@@ -471,7 +600,7 @@ export default function MailView({
                     <div style={styles.cardActions}>
                       <button
                         className="email-card-action-btn"
-                        style={{ ...styles.cardActionBtn, color: mail.isStarred ? '#fbbf24' : 'var(--text-muted)' }}
+                        style={{ ...styles.cardActionBtn, color: mail.isStarred ? 'var(--gold)' : 'var(--text-muted)' }}
                         onClick={(e) => handleToggleStar(mail.id, e)}
                       >
                         <StarIcon size={14} />
@@ -542,7 +671,45 @@ export default function MailView({
                 </div>
               </div>
 
-              {/* Integrations Toolbar - Removed */}
+              {/* Reader zoom controls. The buttons clamp between 50% and 200%
+                  and only affect the email body, never the surrounding panes. */}
+              <div style={styles.detailHeaderActions}>
+                <div style={styles.zoomControls} role="group" aria-label="Email content zoom">
+                  <button
+                    type="button"
+                    className="email-zoom-btn"
+                    style={styles.zoomButton}
+                    onClick={() => changeEmailZoom(-EMAIL_ZOOM_STEP)}
+                    disabled={!canZoomOut}
+                    aria-label="Zoom out email content"
+                    title="Zoom out"
+                  >
+                    <ZoomOutIcon size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="email-zoom-btn email-zoom-level"
+                    style={styles.zoomLevel}
+                    onClick={resetEmailZoom}
+                    aria-label={`Email content zoom ${Math.round(emailZoom * 100)} percent. Reset to 100 percent.`}
+                    aria-live="polite"
+                    title="Reset zoom to 100%"
+                  >
+                    {Math.round(emailZoom * 100)}%
+                  </button>
+                  <button
+                    type="button"
+                    className="email-zoom-btn"
+                    style={styles.zoomButton}
+                    onClick={() => changeEmailZoom(EMAIL_ZOOM_STEP)}
+                    disabled={!canZoomIn}
+                    aria-label="Zoom in email content"
+                    title="Zoom in"
+                  >
+                    <ZoomInIcon size={15} />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div style={styles.divider} />
@@ -596,12 +763,17 @@ export default function MailView({
               )}
             </div>
 
-            {/* Email Body */}
-            <div
-              className="email-html-content"
-              style={styles.detailBody}
-              dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(selectedEmail.body) }}
-            />
+            {/* Email Body — the outer panel keeps a fixed size while the inner
+                content is scaled, so zooming never moves the surrounding panes.
+                `zoom` (rather than transform: scale) reflows the email within
+                the available width and lets the reader pane scroll naturally. */}
+            <div className="email-html-content glass-panel" style={styles.detailBody}>
+              <div
+                className="email-zoom-content"
+                style={{ ...styles.zoomContent, zoom: emailZoom }}
+                dangerouslySetInnerHTML={{ __html: emailBodyHtml }}
+              />
+            </div>
 
             {/* Attachments */}
             {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
@@ -710,13 +882,13 @@ const styles = {
     padding: '12px',
     borderRadius: '8px',
     backgroundColor: 'var(--accent)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '13.5px',
     fontWeight: '600',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(2, 151, 222, 0.3)',
+    boxShadow: '0 4px 12px var(--primary-glow)',
     transition: 'background-color 0.2s',
     ':hover': {
       backgroundColor: 'var(--accent-hover)',
@@ -748,13 +920,13 @@ const styles = {
     transition: 'all 0.2s',
     overflow: 'hidden',
     ':hover': {
-      backgroundColor: 'rgba(255,255,255,0.04)',
+      backgroundColor: 'var(--bg-tertiary)',
       color: 'var(--text-primary)',
     }
   },
   navItemActive: {
     backgroundColor: 'var(--primary-glow)',
-    color: '#0297de',
+    color: 'var(--primary)',
     fontWeight: '600',
   },
   navLabel: {
@@ -895,7 +1067,7 @@ const styles = {
     transition: 'color 0.2s, background-color 0.2s',
     ':hover': {
       color: 'var(--text-primary)',
-      backgroundColor: 'rgba(255,255,255,0.04)',
+      backgroundColor: 'var(--bg-tertiary)',
     }
   },
   detailPane: {
@@ -913,17 +1085,63 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: '16px',
   },
   detailTitleArea: {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
+    flexGrow: 1,
+    minWidth: 0,
   },
   detailSubject: {
     fontFamily: 'var(--font-display)',
     fontSize: '22px',
     fontWeight: '700',
     margin: 0,
+    overflowWrap: 'anywhere',
+  },
+  detailHeaderActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexShrink: 0,
+  },
+  zoomControls: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+    padding: '3px',
+    borderRadius: '8px',
+    backgroundColor: 'var(--bg-tertiary)',
+    border: '1px solid var(--border-color)',
+  },
+  zoomButton: {
+    width: '28px',
+    height: '28px',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    color: 'var(--text-secondary)',
+    backgroundColor: 'transparent',
+    transition: 'color 0.2s, background-color 0.2s',
+  },
+  zoomLevel: {
+    minWidth: '46px',
+    height: '28px',
+    padding: '0 6px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    color: 'var(--text-primary)',
+    backgroundColor: 'transparent',
+    fontSize: '12px',
+    fontWeight: '600',
+    fontVariantNumeric: 'tabular-nums',
+    transition: 'color 0.2s, background-color 0.2s',
   },
   detailAccountRow: {
     display: 'flex',
@@ -955,7 +1173,7 @@ const styles = {
     borderRadius: '50%',
     backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1000,7 +1218,7 @@ const styles = {
     padding: '2px 8px',
     border: '1px solid var(--border-color)',
     borderRadius: '999px',
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'var(--bg-tertiary)',
     color: 'var(--text-secondary)',
     fontFamily: 'inherit',
     fontSize: '11.5px',
@@ -1053,9 +1271,14 @@ const styles = {
     boxSizing: 'border-box',
     fontSize: '14px',
     lineHeight: '1.6',
-    color: 'var(--text-primary)',
+    colorScheme: 'light dark',
     overflow: 'auto',
     wordWrap: 'break-word',
+    padding: '16px',
+  },
+  zoomContent: {
+    width: '100%',
+    minWidth: 0,
   },
   paragraph: {
     margin: '0 0 16px 0',
@@ -1113,7 +1336,7 @@ const styles = {
   replyCard: {
     padding: '12px 16px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    backgroundColor: 'var(--bg-card)',
     border: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
@@ -1151,7 +1374,7 @@ const styles = {
     height: '80px',
     padding: '12px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'var(--bg-primary)',
     border: '1px solid var(--border-color)',
     color: 'var(--text-primary)',
     fontSize: '13px',
@@ -1179,7 +1402,7 @@ const styles = {
     transition: 'all 0.2s',
     ':hover': {
       backgroundColor: 'var(--primary)',
-      color: '#ffffff',
+      color: 'var(--text-adaptive)',
       borderColor: 'var(--primary)',
     }
   },
@@ -1187,7 +1410,7 @@ const styles = {
     padding: '8px 16px',
     borderRadius: '6px',
     backgroundColor: 'var(--accent)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '12.5px',
     fontWeight: '600',
     display: 'flex',
@@ -1241,7 +1464,7 @@ const styles = {
     transition: 'all 0.2s',
     ':hover': {
       backgroundColor: 'var(--accent)',
-      color: '#ffffff',
+      color: 'var(--text-adaptive)',
       borderColor: 'var(--accent)',
     },
     ':disabled': {

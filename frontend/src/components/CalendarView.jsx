@@ -115,34 +115,34 @@ export default function CalendarView({
     const height = (ev.duration / 60) * hourHeight;
 
     let bg = 'var(--primary-glow)';
-    let border = 'rgba(2, 151, 222, 0.4)';
-    let text = '#0297de';
+    let border = 'var(--primary-glow)';
+    let text = 'var(--primary)';
 
     switch (ev.category) {
       case 'email':
-        bg = 'rgba(2, 151, 222, 0.15)';
+        bg = 'var(--primary-glow)';
         border = 'var(--accent)';
-        text = '#ffffff';
+        text = 'var(--text-primary)';
         break;
       case 'work':
-        bg = 'rgba(2, 151, 222, 0.15)';
+        bg = 'var(--primary-glow)';
         border = 'var(--primary)';
-        text = '#ffffff';
+        text = 'var(--text-primary)';
         break;
       case 'health':
-        bg = 'rgba(16, 185, 129, 0.15)';
-        border = '#10b981';
-        text = '#34d399';
+        bg = 'var(--success-glow)';
+        border = 'var(--success)';
+        text = 'var(--success)';
         break;
       case 'routine':
-        bg = 'rgba(245, 158, 11, 0.15)';
-        border = '#f59e0b';
-        text = '#fbbf24';
+        bg = 'var(--warning-glow)';
+        border = 'var(--warning)';
+        text = 'var(--warning)';
         break;
       case 'personal':
-        bg = 'rgba(236, 72, 153, 0.15)';
-        border = '#ec4899';
-        text = '#f472b6';
+        bg = 'var(--danger-pink-glow)';
+        border = 'var(--danger-pink)';
+        text = 'var(--danger-pink)';
         break;
     }
 
@@ -436,13 +436,13 @@ const styles = {
     padding: '12px',
     borderRadius: '8px',
     backgroundColor: 'var(--accent)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '13.5px',
     fontWeight: '600',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    boxShadow: '0 4px 12px rgba(2, 151, 222, 0.3)',
+    boxShadow: '0 4px 12px var(--primary-glow)',
     transition: 'background-color 0.2s',
     ':hover': {
       backgroundColor: 'var(--accent-hover)',

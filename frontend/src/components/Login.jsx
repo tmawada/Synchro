@@ -521,10 +521,10 @@ const styles = {
     padding: '14px',
     borderRadius: '10px',
     backgroundColor: 'var(--primary)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '15px',
     fontWeight: '600',
-    boxShadow: '0 4px 20px rgba(2, 151, 222, 0.4)',
+    boxShadow: '0 4px 20px var(--primary-glow)',
     transition: 'background-color 0.2s',
   },
   warningText: {
@@ -548,6 +548,9 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '12px',
     boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
   },
   modalHeader: {
@@ -625,7 +628,7 @@ const styles = {
     width: '100%',
     padding: '12px',
     borderRadius: '8px',
-    color: '#ffffff',
+    color: 'var(--text-inverse)',
     fontSize: '14px',
     fontWeight: '600',
     marginTop: '8px',
@@ -685,6 +688,6 @@ const styles = {
   },
   toggleBtnActive: {
     backgroundColor: 'var(--primary)',
-    color: '#ffffff',
+    color: 'var(--text-inverse)',
   },
 };

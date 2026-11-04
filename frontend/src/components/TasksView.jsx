@@ -332,9 +332,9 @@ export default function TasksView({
 
   const getPriorityStyle = (prio) => {
     switch (prio) {
-      case 'high': return { color: 'var(--danger)', bg: 'rgba(239, 68, 68, 0.15)' };
-      case 'medium': return { color: 'var(--warning)', bg: 'rgba(245, 158, 11, 0.15)' };
-      default: return { color: 'var(--success)', bg: 'rgba(16, 185, 129, 0.15)' };
+      case 'high': return { color: 'var(--danger)', bg: 'var(--danger-glow)' };
+      case 'medium': return { color: 'var(--warning)', bg: 'var(--warning-glow)' };
+      default: return { color: 'var(--success)', bg: 'var(--success-glow)' };
     }
   };
 
@@ -1008,7 +1008,7 @@ const styles = {
     padding: '10px',
     borderRadius: '8px',
     backgroundColor: 'var(--primary)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
@@ -1052,7 +1052,7 @@ const styles = {
     textAlign: 'left',
     transition: 'all 0.2s',
     ':hover': {
-      backgroundColor: 'rgba(255,255,255,0.04)',
+      backgroundColor: 'var(--bg-tertiary)',
       color: 'var(--text-primary)',
     }
   },
@@ -1146,7 +1146,7 @@ const styles = {
     height: '40px',
     borderRadius: '8px',
     backgroundColor: 'var(--primary)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1174,7 +1174,7 @@ const styles = {
   composerSelect: {
     padding: '6px 10px',
     borderRadius: '6px',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
     fontSize: '12px',
     color: 'var(--text-primary)',
@@ -1183,7 +1183,7 @@ const styles = {
   datePicker: {
     padding: '5px 10px',
     borderRadius: '6px',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
     fontSize: '12px',
     color: 'var(--text-primary)',
@@ -1257,7 +1257,7 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     fontSize: '11px',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontWeight: 'bold',
     transition: 'all 0.2s',
   },
@@ -1312,7 +1312,7 @@ const styles = {
     padding: '6px 12px',
     fontSize: '11.5px',
     fontWeight: '600',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     borderRadius: '6px',
     backgroundColor: 'rgba(255,255,255,0.03)',
   },
@@ -1362,7 +1362,7 @@ const styles = {
     boxSizing: 'border-box',
     padding: '9px 12px',
     borderRadius: '8px',
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'var(--bg-tertiary)',
     border: '1px solid var(--border-color)',
     fontSize: '13px',
     color: 'var(--text-primary)',
@@ -1432,7 +1432,7 @@ const styles = {
     padding: '10px',
     borderRadius: '8px',
     backgroundColor: 'var(--primary)',
-    color: '#ffffff',
+    color: 'var(--text-adaptive)',
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
